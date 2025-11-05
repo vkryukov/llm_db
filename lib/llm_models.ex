@@ -9,49 +9,45 @@ defmodule LlmModels do
 
   - `load/1` - Build catalog from sources and publish to persistent_term
   - `reload/0` - Re-run load with last-known options
-  - `snapshot/0` - Get current snapshot
-  - `epoch/0` - Get current epoch (monotonic version)
 
-  ## Lookup and Listing
+  ## Providers
 
-  - `providers/0` - Get all providers as Provider structs
-  - `list_providers/0` - List all provider atoms
-  - `get_provider/1` - Get provider metadata as Provider struct
-  - `list_models/2` - List models for a provider with optional filters
-  - `get_model/2` - Get a specific model as Model struct
-  - `model/1` - Parse spec and get Model struct
-  - `capabilities/1` - Get capabilities for a model spec
-  - `allowed?/1` - Check if a model passes allow/deny filters
+  - `provider/0` - Get all providers as Provider structs
+  - `provider/1` - Get a specific provider by ID
 
-  ## Selection
+  ## Models
+
+  - `model/0` - Get all models as Model structs
+  - `model/1` - Parse "provider:model" spec and get model
+  - `model/2` - Get a specific model by provider and ID
+  - `models/1` - Get all models for a provider
+
+  ## Selection and Policy
 
   - `select/1` - Select a model matching capability requirements
-
-  ## Spec Parsing
-
-  - `parse_provider/1` - Parse and validate a provider identifier
-  - `parse_spec/1` - Parse "provider:model" specification
-  - `resolve/2` - Resolve a spec to a model record
+  - `allowed?/1` - Check if a model passes allow/deny filters
 
   ## Examples
 
-      # Get providers as structs
-      providers = LlmModels.providers()
+      # Get all providers
+      providers = LlmModels.provider()
 
-      # List provider atoms
-      [:openai, :anthropic, :google_vertex] = LlmModels.list_providers()
+      # Get a specific provider
+      {:ok, provider} = LlmModels.provider(:openai)
 
-      # List models with capability filters
-      models = LlmModels.list_models(:openai,
-        require: [tools: true],
-        forbid: [streaming_tool_calls: true]
-      )
+      # Get all models for a provider
+      models = LlmModels.models(:openai)
 
-      # Get a specific model struct
-      {:ok, model} = LlmModels.get_model(:openai, "gpt-4o-mini")
+      # Get a specific model
+      {:ok, model} = LlmModels.model(:openai, "gpt-4o-mini")
 
-      # Parse spec and get model struct
+      # Parse spec and get model
       {:ok, model} = LlmModels.model("openai:gpt-4o-mini")
+
+      # Access capabilities from model
+      {:ok, model} = LlmModels.model(:openai, "gpt-4o-mini")
+      model.capabilities.tools.enabled
+      #=> true
 
       # Select a model matching requirements
       {:ok, {:openai, "gpt-4o-mini"}} = LlmModels.select(
@@ -59,9 +55,8 @@ defmodule LlmModels do
         prefer: [:openai, :anthropic]
       )
 
-      # Parse and resolve specs
-      {:ok, {:openai, "gpt-4o-mini"}} = LlmModels.parse_spec("openai:gpt-4o-mini")
-      {:ok, {provider, id, model}} = LlmModels.resolve("openai:gpt-4o-mini")
+      # Check if a model is allowed
+      true = LlmModels.allowed?({:openai, "gpt-4o-mini"})
   """
 
   alias LlmModels.{Engine, Store, Spec, Provider, Model}
@@ -126,35 +121,13 @@ defmodule LlmModels do
     end
   end
 
-  @doc """
-  Returns the current snapshot from persistent_term.
-
-  ## Returns
-
-  The snapshot map or `nil` if not loaded.
-
-  ## Examples
-
-      snapshot = LlmModels.snapshot()
-  """
+  @doc false
   @spec snapshot() :: map() | nil
   def snapshot do
     Store.snapshot()
   end
 
-  @doc """
-  Returns the current epoch from persistent_term.
-
-  The epoch is a monotonic integer that increments with each successful load.
-
-  ## Returns
-
-  Non-negative integer representing the current epoch, or `0` if not loaded.
-
-  ## Examples
-
-      epoch = LlmModels.epoch()
-  """
+  @doc false
   @spec epoch() :: non_neg_integer()
   def epoch do
     Store.epoch()
@@ -163,39 +136,20 @@ defmodule LlmModels do
   # Lookup and listing functions
 
   @doc """
-  Lists all provider atoms in the catalog.
+  Gets provider(s) from the catalog.
 
-  ## Returns
+  ## Arity 0 - Returns all providers
 
-  List of provider atoms, sorted alphabetically.
-
-  ## Examples
-
-      [:anthropic, :openai, :google_vertex] = LlmModels.list_providers()
-  """
-  @spec list_providers() :: [provider()]
-  def list_providers do
-    case snapshot() do
-      nil -> []
-      %{providers_by_id: providers} -> providers |> Map.keys() |> Enum.sort()
-      _ -> []
-    end
-  end
-
-  @doc """
-  Returns all providers as Provider structs.
-
-  ## Returns
-
-  List of Provider structs, sorted alphabetically by provider ID.
+  Returns list of all Provider structs, sorted by ID.
 
   ## Examples
 
-      providers = LlmModels.providers()
+      providers = LlmModels.provider()
       #=> [%LlmModels.Provider{id: :anthropic, ...}, ...]
+
   """
-  @spec providers() :: [Provider.t()]
-  def providers do
+  @spec provider() :: [Provider.t()]
+  def provider do
     case snapshot() do
       nil ->
         []
@@ -212,11 +166,11 @@ defmodule LlmModels do
   end
 
   @doc """
-  Gets provider metadata by provider atom.
+  Gets a specific provider by ID.
 
   ## Parameters
 
-  - `provider` - Provider atom (e.g., `:openai`, `:anthropic`)
+  - `id` - Provider atom (e.g., `:openai`, `:anthropic`)
 
   ## Returns
 
@@ -225,18 +179,18 @@ defmodule LlmModels do
 
   ## Examples
 
-      {:ok, provider} = LlmModels.get_provider(:openai)
+      {:ok, provider} = LlmModels.provider(:openai)
       provider.name
       #=> "OpenAI"
   """
-  @spec get_provider(provider()) :: {:ok, Provider.t()} | :error
-  def get_provider(provider) when is_atom(provider) do
+  @spec provider(provider()) :: {:ok, Provider.t()} | :error
+  def provider(id) when is_atom(id) do
     case snapshot() do
       nil ->
         :error
 
       %{providers_by_id: providers} ->
-        case Map.fetch(providers, provider) do
+        case Map.fetch(providers, id) do
           {:ok, provider_map} -> {:ok, Provider.new!(provider_map)}
           :error -> :error
         end
@@ -247,45 +201,91 @@ defmodule LlmModels do
   end
 
   @doc """
-  Lists models for a provider with optional capability filters.
+  Gets model(s) from the catalog.
 
-  ## Parameters
+  ## Arity 0 - Returns all models
 
-  - `provider` - Provider atom
-  - `opts` - Keyword list of options:
-    - `:require` - Keyword list of required capabilities (e.g., `[tools: true]`)
-    - `:forbid` - Keyword list of forbidden capabilities (e.g., `[streaming_tool_calls: true]`)
-
-  ## Returns
-
-  List of model maps matching the filters.
+  Returns all models as Model structs across all providers.
 
   ## Examples
 
-      # All models for a provider
-      models = LlmModels.list_models(:openai)
+      models = LlmModels.model()
+      #=> [%LlmModels.Model{}, ...]
 
-      # Models with specific capabilities
-      models = LlmModels.list_models(:openai,
-        require: [tools: true, json_native: true],
-        forbid: [streaming_tool_calls: true]
-      )
   """
-  @spec list_models(provider(), keyword()) :: [map()]
-  def list_models(provider, opts \\ []) when is_atom(provider) do
-    require_kw = Keyword.get(opts, :require, [])
-    forbid_kw = Keyword.get(opts, :forbid, [])
-
+  @spec model() :: [Model.t()]
+  def model do
     case snapshot() do
       nil ->
         []
 
       %{models: models_by_provider} ->
-        models = Map.get(models_by_provider, provider, [])
+        models_by_provider
+        |> Map.values()
+        |> List.flatten()
+        |> Enum.map(&Model.new!/1)
 
-        models
-        |> Enum.filter(&matches_require?(&1, require_kw))
-        |> Enum.reject(&matches_forbid?(&1, forbid_kw))
+      _ ->
+        []
+    end
+  end
+
+  @doc """
+  Gets a specific model by parsing a spec string.
+
+  Parses "provider:model" spec and returns the Model struct.
+
+  ## Parameters
+
+  - `spec` - Model specification string (e.g., `"openai:gpt-4o-mini"`)
+
+  ## Returns
+
+  - `{:ok, model}` when spec is successfully parsed
+  - `{:error, reason}` when spec parsing fails
+
+  ## Examples
+
+      {:ok, model} = LlmModels.model("openai:gpt-4o-mini")
+      model.id
+      #=> "gpt-4o-mini"
+  """
+  @spec model(String.t()) :: {:ok, Model.t()} | {:error, atom()}
+  def model(spec) when is_binary(spec) do
+    case parse_spec(spec) do
+      {:ok, {provider, model_id}} -> model(provider, model_id)
+      {:error, _} = error -> error
+    end
+  end
+
+  @doc """
+  Gets all models for a specific provider.
+
+  Returns list of Model structs for the specified provider.
+
+  ## Parameters
+
+  - `provider` - Provider atom (e.g., `:openai`)
+
+  ## Returns
+
+  List of Model structs for the provider.
+
+  ## Examples
+
+      models = LlmModels.models(:openai)
+      #=> [%LlmModels.Model{id: "gpt-4o", ...}, ...]
+  """
+  @spec models(provider()) :: [Model.t()]
+  def models(provider) when is_atom(provider) do
+    case snapshot() do
+      nil ->
+        []
+
+      %{models: models_by_provider} ->
+        models_by_provider
+        |> Map.get(provider, [])
+        |> Enum.map(&Model.new!/1)
 
       _ ->
         []
@@ -305,18 +305,18 @@ defmodule LlmModels do
   ## Returns
 
   - `{:ok, model}` - Model struct
-  - `:error` - Model not found
+  - `{:error, :not_found}` - Model not found
 
   ## Examples
 
-      {:ok, model} = LlmModels.get_model(:openai, "gpt-4o-mini")
-      {:ok, model} = LlmModels.get_model(:openai, "gpt-4-mini")  # alias
+      {:ok, model} = LlmModels.model(:openai, "gpt-4o-mini")
+      {:ok, model} = LlmModels.model(:openai, "gpt-4-mini")  # alias
   """
-  @spec get_model(provider(), model_id()) :: {:ok, Model.t()} | :error
-  def get_model(provider, model_id) when is_atom(provider) and is_binary(model_id) do
+  @spec model(provider(), model_id()) :: {:ok, Model.t()} | {:error, :not_found}
+  def model(provider, model_id) when is_atom(provider) and is_binary(model_id) do
     case snapshot() do
       nil ->
-        :error
+        {:error, :not_found}
 
       snapshot when is_map(snapshot) ->
         key = {provider, model_id}
@@ -326,46 +326,8 @@ defmodule LlmModels do
 
         case Map.fetch(snapshot.models_by_key, canonical_key) do
           {:ok, model_map} -> {:ok, Model.new!(model_map)}
-          :error -> :error
+          :error -> {:error, :not_found}
         end
-    end
-  end
-
-  @doc """
-  Gets capabilities for a model specification.
-
-  ## Parameters
-
-  - `spec` - Either `{provider, model_id}` tuple or `"provider:model"` string
-
-  ## Returns
-
-  Capabilities map or `nil` if not found.
-
-  ## Examples
-
-      caps = LlmModels.capabilities({:openai, "gpt-4o-mini"})
-      caps.tools.enabled
-      #=> true
-
-      caps = LlmModels.capabilities("openai:gpt-4o-mini")
-      caps.json.native
-      #=> true
-  """
-  @spec capabilities(model_spec()) :: map() | nil
-  def capabilities(spec)
-
-  def capabilities({provider, model_id}) when is_atom(provider) and is_binary(model_id) do
-    case get_model(provider, model_id) do
-      {:ok, model} -> Map.get(model, :capabilities)
-      :error -> nil
-    end
-  end
-
-  def capabilities(spec) when is_binary(spec) do
-    case Spec.parse_spec(spec) do
-      {:ok, {provider, model_id}} -> capabilities({provider, model_id})
-      _ -> nil
     end
   end
 
@@ -472,11 +434,12 @@ defmodule LlmModels do
     providers =
       case scope do
         :all ->
+          all_providers = provider() |> Enum.map(& &1.id)
+
           if prefer != [] do
-            all_providers = list_providers()
             prefer ++ (all_providers -- prefer)
           else
-            list_providers()
+            all_providers
           end
 
         provider when is_atom(provider) ->
@@ -486,126 +449,20 @@ defmodule LlmModels do
     find_first_match(providers, require_kw, forbid_kw)
   end
 
-  # Spec parsing (delegated to Spec module)
+  # Spec parsing (internal use only)
 
-  @doc """
-  Parses and validates a provider identifier.
-
-  Delegates to `LlmModels.Spec.parse_provider/1`.
-
-  ## Parameters
-
-  - `input` - Provider identifier as atom or binary
-
-  ## Returns
-
-  - `{:ok, atom}` - Normalized provider atom
-  - `{:error, :unknown_provider}` - Provider not found
-  - `{:error, :bad_provider}` - Invalid format
-
-  ## Examples
-
-      {:ok, :openai} = LlmModels.parse_provider(:openai)
-      {:ok, :google_vertex} = LlmModels.parse_provider("google-vertex")
-  """
+  @doc false
   @spec parse_provider(atom() | binary()) ::
           {:ok, provider()} | {:error, :unknown_provider | :bad_provider}
   defdelegate parse_provider(input), to: Spec
 
-  @doc """
-  Parses a "provider:model" specification string.
-
-  Delegates to `LlmModels.Spec.parse_spec/1`.
-
-  ## Parameters
-
-  - `spec` - String in "provider:model" format
-
-  ## Returns
-
-  - `{:ok, {provider, model_id}}` - Parsed spec
-  - `{:error, :invalid_format}` - No ":" found
-  - `{:error, :unknown_provider}` - Provider not found
-
-  ## Examples
-
-      {:ok, {:openai, "gpt-4"}} = LlmModels.parse_spec("openai:gpt-4")
-  """
+  @doc false
   @spec parse_spec(String.t()) ::
           {:ok, {provider(), model_id()}}
           | {:error, :invalid_format | :unknown_provider | :bad_provider}
   defdelegate parse_spec(spec), to: Spec
 
-  @doc """
-  Parses a "provider:model" specification and returns the Model struct.
-
-  Convenience function that combines parse_spec/1 and get_model/2.
-
-  ## Parameters
-
-  - `spec` - String in "provider:model" format or {provider, model_id} tuple
-
-  ## Returns
-
-  - `{:ok, model}` - Model struct
-  - `{:error, :invalid_format}` - No ":" found
-  - `{:error, :unknown_provider}` - Provider not found
-  - `{:error, :not_found}` - Model not found
-
-  ## Examples
-
-      {:ok, model} = LlmModels.model("openai:gpt-4o-mini")
-      model.id
-      #=> "gpt-4o-mini"
-
-      {:ok, model} = LlmModels.model({:openai, "gpt-4o-mini"})
-  """
-  @spec model(String.t() | {provider(), model_id()}) ::
-          {:ok, Model.t()} | {:error, atom()}
-  def model(spec)
-
-  def model({provider, model_id}) when is_atom(provider) and is_binary(model_id) do
-    case get_model(provider, model_id) do
-      {:ok, model} -> {:ok, model}
-      :error -> {:error, :not_found}
-    end
-  end
-
-  def model(spec) when is_binary(spec) do
-    case parse_spec(spec) do
-      {:ok, {provider, model_id}} -> model({provider, model_id})
-      {:error, _} = error -> error
-    end
-  end
-
-  @doc """
-  Resolves a model specification to a canonical model record.
-
-  Delegates to `LlmModels.Spec.resolve/2`.
-
-  Accepts:
-  - "provider:model" string
-  - {provider, model_id} tuple
-  - Bare "model" string with opts[:scope] = provider_atom
-
-  ## Parameters
-
-  - `input` - Model specification
-  - `opts` - Keyword list with optional `:scope`
-
-  ## Returns
-
-  - `{:ok, {provider, canonical_id, model}}` - Resolved model
-  - `{:error, :not_found}` - Model not found
-  - `{:error, :ambiguous}` - Bare model ID matches multiple providers
-  - `{:error, term}` - Other errors
-
-  ## Examples
-
-      {:ok, {provider, id, model}} = LlmModels.resolve("openai:gpt-4")
-      {:ok, {provider, id, model}} = LlmModels.resolve({:openai, "gpt-4"})
-      {:ok, {provider, id, model}} = LlmModels.resolve("gpt-4", scope: :openai)
-  """
+  @doc false
   @spec resolve(model_spec(), keyword()) ::
           {:ok, {provider(), model_id(), map()}} | {:error, term()}
   defdelegate resolve(input, opts \\ []), to: Spec
@@ -663,7 +520,9 @@ defmodule LlmModels do
 
   defp find_first_match([provider | rest], require_kw, forbid_kw) do
     models =
-      list_models(provider, require: require_kw, forbid: forbid_kw)
+      model(provider)
+      |> Enum.filter(&matches_require?(&1, require_kw))
+      |> Enum.reject(&matches_forbid?(&1, forbid_kw))
       |> Enum.filter(&allowed?({provider, &1.id}))
 
     case models do
