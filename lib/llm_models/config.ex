@@ -6,8 +6,6 @@ defmodule LLMModels.Config do
   and compiled filter patterns.
   """
 
-  require Logger
-
   @doc """
   Returns the list of sources to load, in precedence order.
 

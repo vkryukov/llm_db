@@ -4,18 +4,18 @@ defmodule LLMModels.Sources.Local do
 
   Directory structure:
   ```
-  priv/llm_models/
+  priv/llm_models/local/
   ├── openai/
-  │   ├── openai.toml          # Provider definition
-  │   ├── gpt-4o.toml          # Model
-  │   └── gpt-4o-mini.toml     # Model
+  │   ├── provider.toml         # Provider definition
+  │   ├── gpt-4o.toml           # Model
+  │   └── gpt-4o-mini.toml      # Model
   ├── anthropic/
-  │   ├── anthropic.toml
+  │   ├── provider.toml
   │   └── claude-3-5-sonnet.toml
   └── ...
   ```
 
-  Provider TOML files are named `{provider_id}.toml` and contain provider metadata.
+  Provider TOML files are always named `provider.toml` and contain provider metadata.
   Model TOML files contain model metadata with `provider` field linking to provider.
 
   ## Options
@@ -102,8 +102,8 @@ defmodule LLMModels.Sources.Local do
     content = file_reader.(file_path)
     decoded = Toml.decode!(content)
 
-    # Provider definition file (matches provider directory name)
-    if filename == "#{provider_id}.toml" do
+    # Provider definition file (always named "provider.toml")
+    if filename == "provider.toml" do
       Map.merge(provider_data, decoded)
     else
       # Model definition file

@@ -137,37 +137,38 @@ defmodule LLMModelsTest do
       :ok
     end
 
-    test "list_providers/0 returns sorted provider atoms" do
-      providers = LLMModels.list_providers()
+    test "provider/0 returns sorted provider structs" do
+      providers = LLMModels.provider()
 
       assert is_list(providers)
       assert length(providers) > 0
-      assert Enum.all?(providers, &is_atom/1)
-      assert providers == Enum.sort(providers)
+      assert Enum.all?(providers, &is_struct(&1, LLMModels.Provider))
+      provider_ids = Enum.map(providers, & &1.id)
+      assert provider_ids == Enum.sort(provider_ids)
     end
 
-    test "list_providers/0 returns empty list when not loaded" do
+    test "provider/0 returns empty list when not loaded" do
       Store.clear!()
-      assert LLMModels.list_providers() == []
+      assert LLMModels.provider() == []
     end
 
-    test "get_provider/1 returns provider metadata" do
-      providers = LLMModels.list_providers()
-      provider = hd(providers)
+    test "provider/1 returns provider metadata" do
+      providers = LLMModels.provider()
+      provider_id = hd(providers).id
 
-      {:ok, provider_data} = LLMModels.get_provider(provider)
+      {:ok, provider_data} = LLMModels.provider(provider_id)
 
-      assert is_map(provider_data)
-      assert provider_data.id == provider
+      assert is_struct(provider_data, LLMModels.Provider)
+      assert provider_data.id == provider_id
     end
 
-    test "get_provider/1 returns :error for unknown provider" do
-      assert :error = LLMModels.get_provider(:nonexistent)
+    test "provider/1 returns :error for unknown provider" do
+      assert :error = LLMModels.provider(:nonexistent)
     end
 
-    test "get_provider/1 returns :error when not loaded" do
+    test "provider/1 returns :error when not loaded" do
       Store.clear!()
-      assert :error = LLMModels.get_provider(:openai)
+      assert :error = LLMModels.provider(:openai)
     end
   end
 
@@ -177,75 +178,88 @@ defmodule LLMModelsTest do
       :ok
     end
 
-    test "list_models/2 returns all models for provider" do
-      providers = LLMModels.list_providers()
+    test "models/1 returns all models for provider" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         assert is_list(models)
-        assert Enum.all?(models, fn m -> m.provider == provider end)
+        assert Enum.all?(models, &is_struct(&1, LLMModels.Model))
+        assert Enum.all?(models, fn m -> m.provider == provider_id end)
       end
     end
 
-    test "list_models/2 filters by required capabilities" do
-      providers = LLMModels.list_providers()
+    test "models/1 with manual filtering by required capabilities" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider, require: [chat: true])
-
-        assert is_list(models)
-
-        Enum.each(models, fn model ->
-          caps = Map.get(model, :capabilities, %{})
-          assert Map.get(caps, :chat) == true
-        end)
-      end
-    end
-
-    test "list_models/2 filters by forbidden capabilities" do
-      providers = LLMModels.list_providers()
-
-      if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider, forbid: [embeddings: true])
-
-        assert is_list(models)
-
-        Enum.each(models, fn model ->
-          caps = Map.get(model, :capabilities) || %{}
-          refute Map.get(caps, :embeddings) == true
-        end)
-      end
-    end
-
-    test "list_models/2 combines require and forbid filters" do
-      providers = LLMModels.list_providers()
-
-      if providers != [] do
-        provider = hd(providers)
+        provider_id = hd(providers).id
 
         models =
-          LLMModels.list_models(provider,
-            require: [chat: true],
-            forbid: [embeddings: true]
-          )
+          LLMModels.models(provider_id)
+          |> Enum.filter(fn model ->
+            caps = model.capabilities
+            caps.chat == true
+          end)
 
         assert is_list(models)
 
         Enum.each(models, fn model ->
-          caps = Map.get(model, :capabilities, %{})
-          assert Map.get(caps, :chat) == true
+          assert model.capabilities.chat == true
+        end)
+      end
+    end
+
+    test "models/1 with manual filtering by forbidden capabilities" do
+      providers = LLMModels.provider()
+
+      if providers != [] do
+        provider_id = hd(providers).id
+
+        models =
+          LLMModels.models(provider_id)
+          |> Enum.filter(fn model ->
+            caps = model.capabilities
+            not (Map.get(caps, :embeddings) == true)
+          end)
+
+        assert is_list(models)
+
+        Enum.each(models, fn model ->
+          caps = model.capabilities
           refute Map.get(caps, :embeddings) == true
         end)
       end
     end
 
-    test "list_models/2 returns empty list when not loaded" do
+    test "models/1 with manual filtering combining require and forbid" do
+      providers = LLMModels.provider()
+
+      if providers != [] do
+        provider_id = hd(providers).id
+
+        models =
+          LLMModels.models(provider_id)
+          |> Enum.filter(fn model ->
+            caps = model.capabilities
+            caps.chat == true and not (Map.get(caps, :embeddings) == true)
+          end)
+
+        assert is_list(models)
+
+        Enum.each(models, fn model ->
+          caps = model.capabilities
+          assert caps.chat == true
+          refute Map.get(caps, :embeddings) == true
+        end)
+      end
+    end
+
+    test "models/1 returns empty list when not loaded" do
       Store.clear!()
-      assert LLMModels.list_models(:openai) == []
+      assert LLMModels.models(:openai) == []
     end
   end
 
@@ -255,48 +269,49 @@ defmodule LLMModelsTest do
       :ok
     end
 
-    test "get_model/2 returns model by provider and id" do
-      providers = LLMModels.list_providers()
+    test "model/2 returns model by provider and id" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         if models != [] do
-          model = hd(models)
-          {:ok, fetched} = LLMModels.get_model(provider, model.id)
+          model_data = hd(models)
+          {:ok, fetched} = LLMModels.model(provider_id, model_data.id)
 
-          assert fetched.id == model.id
-          assert fetched.provider == provider
+          assert is_struct(fetched, LLMModels.Model)
+          assert fetched.id == model_data.id
+          assert fetched.provider == provider_id
         end
       end
     end
 
-    test "get_model/2 resolves aliases" do
-      providers = LLMModels.list_providers()
+    test "model/2 resolves aliases" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         model_with_alias = Enum.find(models, fn m -> m.aliases != [] end)
 
         if model_with_alias do
           alias_name = hd(model_with_alias.aliases)
-          {:ok, fetched} = LLMModels.get_model(provider, alias_name)
+          {:ok, fetched} = LLMModels.model(provider_id, alias_name)
 
           assert fetched.id == model_with_alias.id
         end
       end
     end
 
-    test "get_model/2 returns :error for unknown model" do
-      assert :error = LLMModels.get_model(:openai, "nonexistent-model")
+    test "model/2 returns :error for unknown model" do
+      assert {:error, :not_found} = LLMModels.model(:openai, "nonexistent-model")
     end
 
-    test "get_model/2 returns :error when not loaded" do
+    test "model/2 returns :error when not loaded" do
       Store.clear!()
-      assert :error = LLMModels.get_model(:openai, "gpt-4")
+      assert {:error, :not_found} = LLMModels.model(:openai, "gpt-4")
     end
   end
 
@@ -307,15 +322,15 @@ defmodule LLMModelsTest do
     end
 
     test "capabilities/1 with tuple spec returns capabilities or nil" do
-      providers = LLMModels.list_providers()
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         if models != [] do
-          model = hd(models)
-          caps = LLMModels.capabilities({provider, model.id})
+          model_data = hd(models)
+          caps = LLMModels.capabilities({provider_id, model_data.id})
 
           # Capabilities may be nil if not in snapshot
           if caps do
@@ -326,15 +341,15 @@ defmodule LLMModelsTest do
     end
 
     test "capabilities/1 with string spec returns capabilities or nil" do
-      providers = LLMModels.list_providers()
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         if models != [] do
-          model = hd(models)
-          spec = "#{provider}:#{model.id}"
+          model_data = hd(models)
+          spec = "#{provider_id}:#{model_data.id}"
           caps = LLMModels.capabilities(spec)
 
           # Capabilities may be nil if not in snapshot
@@ -591,129 +606,86 @@ defmodule LLMModelsTest do
       :ok
     end
 
-    test "parse_provider/1 delegates to Spec module" do
-      providers = LLMModels.list_providers()
+    test "model/1 parses provider:model format" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        assert {:ok, ^provider} = LLMModels.parse_provider(provider)
-      end
-    end
-
-    test "parse_provider/1 normalizes string to atom" do
-      providers = LLMModels.list_providers()
-
-      if :openai in providers do
-        assert {:ok, :openai} = LLMModels.parse_provider("openai")
-      end
-    end
-
-    test "parse_provider/1 returns error for unknown provider" do
-      assert {:error, :unknown_provider} = LLMModels.parse_provider(:nonexistent)
-    end
-
-    test "parse_spec/1 parses provider:model format" do
-      providers = LLMModels.list_providers()
-
-      if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         if models != [] do
-          model = hd(models)
-          spec = "#{provider}:#{model.id}"
+          model_data = hd(models)
+          spec = "#{provider_id}:#{model_data.id}"
 
-          assert {:ok, {^provider, model_id}} = LLMModels.parse_spec(spec)
-          assert model_id == model.id
+          assert {:ok, fetched} = LLMModels.model(spec)
+          assert is_struct(fetched, LLMModels.Model)
+          assert fetched.id == model_data.id
+          assert fetched.provider == provider_id
         end
       end
     end
 
-    test "parse_spec/1 returns error for invalid format" do
-      assert {:error, :invalid_format} = LLMModels.parse_spec("no-colon")
+    test "model/1 returns error for invalid format" do
+      assert {:error, :invalid_format} = LLMModels.model("no-colon")
     end
 
-    test "parse_spec/1 returns error for unknown provider" do
-      assert {:error, :unknown_provider} = LLMModels.parse_spec("nonexistent:model")
+    test "model/1 returns error for unknown provider" do
+      assert {:error, :unknown_provider} = LLMModels.model("nonexistent:model")
     end
 
-    test "resolve/2 resolves string spec to model" do
-      providers = LLMModels.list_providers()
+    test "model/2 resolves model by provider and id" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         if models != [] do
-          model = hd(models)
-          spec = "#{provider}:#{model.id}"
+          model_data = hd(models)
 
-          assert {:ok, {^provider, canonical_id, resolved_model}} = LLMModels.resolve(spec)
-          assert canonical_id == model.id
-          assert resolved_model.id == model.id
+          assert {:ok, resolved_model} = LLMModels.model(provider_id, model_data.id)
+          assert resolved_model.id == model_data.id
+          assert resolved_model.provider == provider_id
         end
       end
     end
 
-    test "resolve/2 resolves tuple spec to model" do
-      providers = LLMModels.list_providers()
+    test "model/2 resolves alias to canonical model" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
-
-        if models != [] do
-          model = hd(models)
-
-          assert {:ok, {^provider, canonical_id, resolved_model}} =
-                   LLMModels.resolve({provider, model.id})
-
-          assert canonical_id == model.id
-          assert resolved_model.id == model.id
-        end
-      end
-    end
-
-    test "resolve/2 resolves alias to canonical model" do
-      providers = LLMModels.list_providers()
-
-      if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         model_with_alias = Enum.find(models, fn m -> m.aliases != [] end)
 
         if model_with_alias do
           alias_name = hd(model_with_alias.aliases)
 
-          assert {:ok, {^provider, canonical_id, resolved_model}} =
-                   LLMModels.resolve({provider, alias_name})
-
-          assert canonical_id == model_with_alias.id
+          assert {:ok, resolved_model} = LLMModels.model(provider_id, alias_name)
           assert resolved_model.id == model_with_alias.id
         end
       end
     end
 
-    test "resolve/2 returns error for unknown model" do
-      assert {:error, :not_found} = LLMModels.resolve({:openai, "nonexistent"})
+    test "model/2 returns error for unknown model" do
+      assert {:error, :not_found} = LLMModels.model(:openai, "nonexistent")
     end
 
-    test "resolve/2 with scope resolves bare model id" do
-      providers = LLMModels.list_providers()
+    test "model/1 with string spec resolves model" do
+      providers = LLMModels.provider()
 
       if providers != [] do
-        provider = hd(providers)
-        models = LLMModels.list_models(provider)
+        provider_id = hd(providers).id
+        models = LLMModels.models(provider_id)
 
         if models != [] do
-          model = hd(models)
+          model_data = hd(models)
+          spec = "#{provider_id}:#{model_data.id}"
 
-          assert {:ok, {^provider, canonical_id, resolved_model}} =
-                   LLMModels.resolve(model.id, scope: provider)
-
-          assert canonical_id == model.id
-          assert resolved_model.id == model.id
+          assert {:ok, resolved_model} = LLMModels.model(spec)
+          assert resolved_model.id == model_data.id
+          assert resolved_model.provider == provider_id
         end
       end
     end
@@ -738,7 +710,10 @@ defmodule LLMModelsTest do
 
       {:ok, _} = load_with_test_data(config)
 
-      models = LLMModels.list_models(:test_provider, require: [chat: true])
+      models =
+        LLMModels.models(:test_provider)
+        |> Enum.filter(fn m -> m.capabilities.chat == true end)
+
       assert length(models) == 1
       assert hd(models).id == "chat-model"
     end
@@ -769,12 +744,19 @@ defmodule LLMModelsTest do
 
       {:ok, _} = load_with_test_data(config)
 
-      models = LLMModels.list_models(:test_provider, require: [tools: true])
+      models =
+        LLMModels.models(:test_provider)
+        |> Enum.filter(fn m -> get_in(m.capabilities, [:tools, :enabled]) == true end)
+
       assert length(models) == 1
       assert hd(models).id == "tools-model"
 
       models =
-        LLMModels.list_models(:test_provider, require: [tools: true, tools_streaming: true])
+        LLMModels.models(:test_provider)
+        |> Enum.filter(fn m ->
+          get_in(m.capabilities, [:tools, :enabled]) == true and
+            get_in(m.capabilities, [:tools, :streaming]) == true
+        end)
 
       assert length(models) == 1
       assert hd(models).id == "tools-model"
@@ -806,12 +788,19 @@ defmodule LLMModelsTest do
 
       {:ok, _} = load_with_test_data(config)
 
-      models = LLMModels.list_models(:test_provider, require: [json_native: true])
+      models =
+        LLMModels.models(:test_provider)
+        |> Enum.filter(fn m -> get_in(m.capabilities, [:json, :native]) == true end)
+
       assert length(models) == 1
       assert hd(models).id == "json-model"
 
       models =
-        LLMModels.list_models(:test_provider, require: [json_native: true, json_schema: true])
+        LLMModels.models(:test_provider)
+        |> Enum.filter(fn m ->
+          get_in(m.capabilities, [:json, :native]) == true and
+            get_in(m.capabilities, [:json, :schema]) == true
+        end)
 
       assert length(models) == 1
       assert hd(models).id == "json-model"
@@ -843,7 +832,10 @@ defmodule LLMModelsTest do
 
       {:ok, _} = load_with_test_data(config)
 
-      models = LLMModels.list_models(:test_provider, require: [streaming_tool_calls: true])
+      models =
+        LLMModels.models(:test_provider)
+        |> Enum.filter(fn m -> get_in(m.capabilities, [:streaming, :tool_calls]) == true end)
+
       assert length(models) == 1
       assert hd(models).id == "streaming-model"
     end
@@ -895,20 +887,21 @@ defmodule LLMModelsTest do
 
       assert is_map(snapshot)
 
-      providers = LLMModels.list_providers()
-      assert :provider_a in providers
-      assert :provider_b in providers
+      providers = LLMModels.provider()
+      provider_ids = Enum.map(providers, & &1.id)
+      assert :provider_a in provider_ids
+      assert :provider_b in provider_ids
 
-      {:ok, provider_a} = LLMModels.get_provider(:provider_a)
+      {:ok, provider_a} = LLMModels.provider(:provider_a)
       assert provider_a.name == "Provider A"
 
-      models_a = LLMModels.list_models(:provider_a)
+      models_a = LLMModels.models(:provider_a)
       assert length(models_a) == 2
 
-      {:ok, model} = LLMModels.get_model(:provider_a, "model-a1")
+      {:ok, model} = LLMModels.model(:provider_a, "model-a1")
       assert model.id == "model-a1"
 
-      {:ok, model_via_alias} = LLMModels.get_model(:provider_a, "model-a1-alias")
+      {:ok, model_via_alias} = LLMModels.model(:provider_a, "model-a1-alias")
       assert model_via_alias.id == "model-a1"
 
       caps = LLMModels.capabilities({:provider_a, "model-a1"})
@@ -926,13 +919,8 @@ defmodule LLMModelsTest do
       assert provider == :provider_a
       assert model_id == "model-a1"
 
-      {:ok, {:provider_a, "model-a1"}} = LLMModels.parse_spec("provider_a:model-a1")
-
-      {:ok, {provider, canonical_id, resolved_model}} =
-        LLMModels.resolve("provider_a:model-a1")
-
-      assert provider == :provider_a
-      assert canonical_id == "model-a1"
+      {:ok, resolved_model} = LLMModels.model("provider_a:model-a1")
+      assert resolved_model.provider == :provider_a
       assert resolved_model.id == "model-a1"
 
       assert :ok = LLMModels.reload()
@@ -984,24 +972,26 @@ defmodule LLMModelsTest do
 
       {:ok, _} = load_with_test_data(config)
 
-      models = LLMModels.list_models(:test_provider, require: [chat: true])
+      models =
+        LLMModels.models(:test_provider)
+        |> Enum.filter(fn m -> get_in(m.capabilities, [:chat]) == true end)
+
       assert models == []
     end
 
     test "handles invalid spec format" do
       {:ok, _} = load_with_test_data(%{overrides: minimal_test_data()})
 
-      assert {:error, :invalid_format} = LLMModels.parse_spec("invalid")
-      assert {:error, :invalid_format} = LLMModels.resolve(:invalid)
+      assert {:error, :invalid_format} = LLMModels.model("invalid")
     end
 
     test "handles snapshot not loaded" do
       Store.clear!()
 
-      assert LLMModels.list_providers() == []
-      assert LLMModels.get_provider(:openai) == :error
-      assert LLMModels.list_models(:openai) == []
-      assert LLMModels.get_model(:openai, "gpt-4") == :error
+      assert LLMModels.provider() == []
+      assert LLMModels.provider(:openai) == :error
+      assert LLMModels.models(:openai) == []
+      assert LLMModels.model(:openai, "gpt-4") == {:error, :not_found}
       assert LLMModels.capabilities({:openai, "gpt-4"}) == nil
       assert LLMModels.allowed?({:openai, "gpt-4"}) == false
       assert {:error, :no_match} = LLMModels.select(require: [chat: true])

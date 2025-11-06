@@ -5,7 +5,7 @@ config :llm_models,
   # Default sources for loading model metadata (first = lowest precedence, last = highest)
   sources: [
     {LLMModels.Sources.ModelsDev, %{}},
-    {LLMModels.Sources.Local, %{dir: "priv/llm_models"}},
+    {LLMModels.Sources.Local, %{dir: "priv/llm_models/local"}},
     {LLMModels.Sources.Config,
      %{overrides: Application.compile_env(:llm_models, :overrides, %{})}}
   ],

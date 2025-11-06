@@ -1,0 +1,29 @@
+# Custom Model Example
+id = "my-custom-model-v1"
+provider = "custom"
+name = "My Custom Model v1"
+family = "custom-family"
+release_date = "2024-01-15"
+knowledge = "2024-01"
+tags = ["experimental", "fine-tuned"]
+
+[limits]
+max_input_tokens = 32000
+max_output_tokens = 4096
+
+[cost]
+input_per_1m = 1.00
+output_per_1m = 2.00
+
+[modalities]
+input = ["text"]
+output = ["text"]
+
+[capabilities]
+streaming = true
+function_calling = false
+
+[extra]
+# Custom fields specific to your provider
+deployment_id = "prod-deployment-001"
+model_version = "1.0.0"

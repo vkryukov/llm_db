@@ -1,0 +1,7 @@
+# Anthropic Provider Definition
+id = "anthropic"
+name = "Anthropic"
+base_url = "https://api.anthropic.com/v1"
+doc = "https://docs.anthropic.com"
+
+env = ["ANTHROPIC_API_KEY"]
