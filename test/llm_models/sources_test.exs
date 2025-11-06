@@ -4,11 +4,11 @@ defmodule LLMModels.SourcesTest do
   alias LLMModels.Sources.{Config, Local}
 
   describe "Local source" do
-    @tag :skip
     test "loads providers and models from TOML directory structure" do
-      # This test requires actual TOML files in priv/llm_models/{provider}/{provider}.toml
-      # Skipped until sample TOML files are created or filesystem is properly mocked
-      :ok
+      result = Local.load(%{dir: "priv/llm_models/local"})
+      assert {:ok, data} = result
+      assert is_map(data)
+      assert map_size(data) > 0
     end
 
     test "returns error when directory not found" do
@@ -19,13 +19,6 @@ defmodule LLMModels.SourcesTest do
     test "requires dir parameter" do
       result = Local.load(%{})
       assert {:error, :dir_required} = result
-    end
-
-    @tag :skip
-    test "handles TOML parse errors gracefully" do
-      # This test would require mocking File.dir? and filesystem access
-      # Skipping for now since the actual error handling is tested in practice
-      :ok
     end
   end
 

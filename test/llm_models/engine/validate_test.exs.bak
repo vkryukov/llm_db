@@ -1,66 +1,67 @@
-defmodule LLMModels.ValidateTest do
+defmodule LLMModels.Engine.ValidateTest do
   use ExUnit.Case, async: true
 
   alias LLMModels.Validate
+  alias LLMModels.Test.Fixtures
 
   describe "validate_provider/1" do
     test "validates minimal valid provider" do
-      input = %{id: :openai}
+      input = %{id: :test_provider_alpha}
       assert {:ok, result} = Validate.validate_provider(input)
-      assert result.id == :openai
+      assert result.id == :test_provider_alpha
     end
 
     test "validates complete provider with all fields" do
       input = %{
-        id: :openai,
-        name: "OpenAI",
-        base_url: "https://api.openai.com",
-        env: ["OPENAI_API_KEY"],
-        doc: "OpenAI provider",
+        id: :test_provider_alpha,
+        name: "Test Provider Alpha",
+        base_url: "https://alpha.example.com",
+        env: ["TEST_API_KEY"],
+        doc: "Test provider",
         extra: %{"custom" => "value"}
       }
 
       assert {:ok, result} = Validate.validate_provider(input)
-      assert result.id == :openai
-      assert result.name == "OpenAI"
-      assert result.base_url == "https://api.openai.com"
-      assert result.env == ["OPENAI_API_KEY"]
-      assert result.doc == "OpenAI provider"
+      assert result.id == :test_provider_alpha
+      assert result.name == "Test Provider Alpha"
+      assert result.base_url == "https://alpha.example.com"
+      assert result.env == ["TEST_API_KEY"]
+      assert result.doc == "Test provider"
       assert result.extra == %{"custom" => "value"}
     end
 
     test "rejects provider with missing required id" do
-      input = %{name: "OpenAI"}
+      input = %{name: "Test Provider"}
       assert {:error, _} = Validate.validate_provider(input)
     end
 
     test "rejects provider with wrong type for id" do
-      input = %{id: "openai"}
+      input = %{id: "test-provider"}
       assert {:error, _} = Validate.validate_provider(input)
     end
 
     test "rejects provider with wrong type for name" do
-      input = %{id: :openai, name: 123}
+      input = %{id: :test_provider_alpha, name: 123}
       assert {:error, _} = Validate.validate_provider(input)
     end
 
     test "rejects provider with wrong type for base_url" do
-      input = %{id: :openai, base_url: 456}
+      input = %{id: :test_provider_alpha, base_url: 456}
       assert {:error, _} = Validate.validate_provider(input)
     end
 
     test "rejects provider with wrong type for env" do
-      input = %{id: :openai, env: "OPENAI_API_KEY"}
+      input = %{id: :test_provider_alpha, env: "TEST_API_KEY"}
       assert {:error, _} = Validate.validate_provider(input)
     end
 
     test "rejects provider with non-string elements in env array" do
-      input = %{id: :openai, env: ["OPENAI_API_KEY", 123]}
+      input = %{id: :test_provider_alpha, env: ["TEST_API_KEY", 123]}
       assert {:error, _} = Validate.validate_provider(input)
     end
 
     test "rejects provider with wrong type for extra" do
-      input = %{id: :openai, extra: "not a map"}
+      input = %{id: :test_provider_alpha, extra: "not a map"}
       assert {:error, _} = Validate.validate_provider(input)
     end
   end
@@ -68,24 +69,24 @@ defmodule LLMModels.ValidateTest do
   describe "validate_model/1" do
     test "validates minimal valid model" do
       input = %{
-        id: "gpt-4o-mini",
-        provider: :openai
+        id: "test-model-v1",
+        provider: :test_provider_alpha
       }
 
       assert {:ok, result} = Validate.validate_model(input)
-      assert result.id == "gpt-4o-mini"
-      assert result.provider == :openai
-      assert result.deprecated? == false
+      assert result.id == "test-model-v1"
+      assert result.provider == :test_provider_alpha
+      assert result.deprecated == false
       assert result.aliases == []
     end
 
     test "validates complete model with all fields" do
       input = %{
-        id: "gpt-4o-mini",
-        provider: :openai,
-        provider_model_id: "gpt-4o-mini-2024-07-18",
-        name: "GPT-4o Mini",
-        family: "gpt-4o",
+        id: "test-model-v2-advanced",
+        provider: :test_provider_alpha,
+        provider_model_id: "test-model-v2-advanced-2024-07-18",
+        name: "Test Model V2 Advanced",
+        family: "test-model-v2",
         release_date: "2024-07-18",
         last_updated: "2024-10-01",
         knowledge: "2023-10",
@@ -100,17 +101,17 @@ defmodule LLMModels.ValidateTest do
           tools: %{enabled: true, streaming: true}
         },
         tags: ["fast", "cheap"],
-        deprecated?: false,
-        aliases: ["gpt-4o-mini-latest"],
+        deprecated: false,
+        aliases: ["test-model-latest"],
         extra: %{"custom" => "value"}
       }
 
       assert {:ok, result} = Validate.validate_model(input)
-      assert result.id == "gpt-4o-mini"
-      assert result.provider == :openai
-      assert result.provider_model_id == "gpt-4o-mini-2024-07-18"
-      assert result.name == "GPT-4o Mini"
-      assert result.family == "gpt-4o"
+      assert result.id == "test-model-v2-advanced"
+      assert result.provider == :test_provider_alpha
+      assert result.provider_model_id == "test-model-v2-advanced-2024-07-18"
+      assert result.name == "Test Model V2 Advanced"
+      assert result.family == "test-model-v2"
       assert result.release_date == "2024-07-18"
       assert result.last_updated == "2024-10-01"
       assert result.knowledge == "2023-10"
@@ -124,53 +125,53 @@ defmodule LLMModels.ValidateTest do
       assert result.capabilities.tools.enabled == true
       assert result.capabilities.tools.streaming == true
       assert result.tags == ["fast", "cheap"]
-      assert result.deprecated? == false
-      assert result.aliases == ["gpt-4o-mini-latest"]
+      assert result.deprecated == false
+      assert result.aliases == ["test-model-latest"]
       assert result.extra == %{"custom" => "value"}
     end
 
     test "rejects model with missing required id" do
-      input = %{provider: :openai}
+      input = %{provider: :test_provider_alpha}
       assert {:error, _} = Validate.validate_model(input)
     end
 
     test "rejects model with missing required provider" do
-      input = %{id: "gpt-4o"}
+      input = %{id: "test-model-v1"}
       assert {:error, _} = Validate.validate_model(input)
     end
 
     test "rejects model with wrong type for id" do
-      input = %{id: :gpt_4o, provider: :openai}
+      input = %{id: :test_model_v1, provider: :test_provider_alpha}
       assert {:error, _} = Validate.validate_model(input)
     end
 
     test "rejects model with wrong type for provider" do
-      input = %{id: "gpt-4o", provider: "openai"}
+      input = %{id: "test-model-v1", provider: "test-provider"}
       assert {:error, _} = Validate.validate_model(input)
     end
 
     test "rejects model with wrong type for name" do
-      input = %{id: "gpt-4o", provider: :openai, name: 123}
+      input = %{id: "test-model-v1", provider: :test_provider_alpha, name: 123}
       assert {:error, _} = Validate.validate_model(input)
     end
 
-    test "rejects model with wrong type for deprecated?" do
-      input = %{id: "gpt-4o", provider: :openai, deprecated?: "true"}
+    test "rejects model with wrong type for deprecated" do
+      input = %{id: "test-model-v1", provider: :test_provider_alpha, deprecated: "true"}
       assert {:error, _} = Validate.validate_model(input)
     end
 
     test "rejects model with wrong type for aliases" do
-      input = %{id: "gpt-4o", provider: :openai, aliases: "gpt-4o-latest"}
+      input = %{id: "test-model-v1", provider: :test_provider_alpha, aliases: "test-model-latest"}
       assert {:error, _} = Validate.validate_model(input)
     end
 
     test "rejects model with non-string elements in aliases" do
-      input = %{id: "gpt-4o", provider: :openai, aliases: ["gpt-4o-latest", 123]}
+      input = %{id: "test-model-v1", provider: :test_provider_alpha, aliases: ["test-model-latest", 123]}
       assert {:error, _} = Validate.validate_model(input)
     end
 
     test "rejects model with wrong type for tags" do
-      input = %{id: "gpt-4o", provider: :openai, tags: "fast"}
+      input = %{id: "test-model-v1", provider: :test_provider_alpha, tags: "fast"}
       assert {:error, _} = Validate.validate_model(input)
     end
   end
@@ -494,7 +495,7 @@ defmodule LLMModels.ValidateTest do
   describe "ensure_viable/2" do
     test "returns :ok with non-empty providers and models" do
       providers = [%{id: :openai}]
-      models = [%{id: "gpt-4o", provider: :openai, deprecated?: false, aliases: []}]
+      models = [%{id: "gpt-4o", provider: :openai, deprecated: false, aliases: []}]
 
       assert :ok = Validate.ensure_viable(providers, models)
     end
@@ -507,9 +508,9 @@ defmodule LLMModels.ValidateTest do
       ]
 
       models = [
-        %{id: "gpt-4o", provider: :openai, deprecated?: false, aliases: []},
-        %{id: "claude-3", provider: :anthropic, deprecated?: false, aliases: []},
-        %{id: "gemini-pro", provider: :google, deprecated?: false, aliases: []}
+        %{id: "gpt-4o", provider: :openai, deprecated: false, aliases: []},
+        %{id: "claude-3", provider: :anthropic, deprecated: false, aliases: []},
+        %{id: "gemini-pro", provider: :google, deprecated: false, aliases: []}
       ]
 
       assert :ok = Validate.ensure_viable(providers, models)
@@ -517,7 +518,7 @@ defmodule LLMModels.ValidateTest do
 
     test "returns error when providers is empty" do
       providers = []
-      models = [%{id: "gpt-4o", provider: :openai, deprecated?: false, aliases: []}]
+      models = [%{id: "gpt-4o", provider: :openai, deprecated: false, aliases: []}]
 
       assert {:error, :empty_catalog} = Validate.ensure_viable(providers, models)
     end

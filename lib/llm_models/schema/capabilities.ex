@@ -7,26 +7,26 @@ defmodule LLMModels.Schema.Capabilities do
   """
 
   @reasoning_schema Zoi.object(%{
-                      enabled: Zoi.boolean() |> Zoi.default(false),
+                      enabled: Zoi.boolean() |> Zoi.optional(),
                       token_budget: Zoi.integer() |> Zoi.min(0) |> Zoi.optional()
                     })
 
   @tools_schema Zoi.object(%{
-                  enabled: Zoi.boolean() |> Zoi.default(false),
-                  streaming: Zoi.boolean() |> Zoi.default(false),
-                  strict: Zoi.boolean() |> Zoi.default(false),
-                  parallel: Zoi.boolean() |> Zoi.default(false)
+                  enabled: Zoi.boolean() |> Zoi.optional(),
+                  streaming: Zoi.boolean() |> Zoi.optional(),
+                  strict: Zoi.boolean() |> Zoi.optional(),
+                  parallel: Zoi.boolean() |> Zoi.optional()
                 })
 
   @json_schema Zoi.object(%{
-                 native: Zoi.boolean() |> Zoi.default(false),
-                 schema: Zoi.boolean() |> Zoi.default(false),
-                 strict: Zoi.boolean() |> Zoi.default(false)
+                 native: Zoi.boolean() |> Zoi.optional(),
+                 schema: Zoi.boolean() |> Zoi.optional(),
+                 strict: Zoi.boolean() |> Zoi.optional()
                })
 
   @streaming_schema Zoi.object(%{
-                      text: Zoi.boolean() |> Zoi.default(true),
-                      tool_calls: Zoi.boolean() |> Zoi.default(false)
+                      text: Zoi.boolean() |> Zoi.optional(),
+                      tool_calls: Zoi.boolean() |> Zoi.optional()
                     })
 
   @schema Zoi.object(%{

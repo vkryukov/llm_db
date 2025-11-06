@@ -22,7 +22,7 @@ defmodule LLMModels.Model do
           modalities: map() | nil,
           capabilities: map() | nil,
           tags: [String.t()] | nil,
-          deprecated?: boolean(),
+          deprecated: boolean(),
           aliases: [String.t()],
           extra: map() | nil
         }
@@ -42,7 +42,7 @@ defmodule LLMModels.Model do
     :capabilities,
     :tags,
     :extra,
-    deprecated?: false,
+    deprecated: false,
     aliases: []
   ]
 

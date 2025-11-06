@@ -6,6 +6,8 @@ defmodule LLMModels.Validate do
   handling errors gracefully and ensuring catalog viability.
   """
 
+  require Logger
+
   alias LLMModels.Schema.{Model, Provider}
 
   @type validation_error :: term()
@@ -32,7 +34,7 @@ defmodule LLMModels.Validate do
   ## Examples
 
       iex> validate_model(%{id: "gpt-4o", provider: :openai})
-      {:ok, %{id: "gpt-4o", provider: :openai, deprecated?: false, aliases: []}}
+      {:ok, %{id: "gpt-4o", provider: :openai, deprecated: false, aliases: []}}
 
       iex> validate_model(%{id: "gpt-4o"})
       {:error, _}
@@ -86,8 +88,18 @@ defmodule LLMModels.Validate do
     {valid, invalid_count} =
       Enum.reduce(maps, {[], 0}, fn map, {valid_acc, invalid_acc} ->
         case validate_model(map) do
-          {:ok, model} -> {[model | valid_acc], invalid_acc}
-          {:error, _} -> {valid_acc, invalid_acc + 1}
+          {:ok, model} ->
+            {[model | valid_acc], invalid_acc}
+
+          {:error, error} ->
+            model_id = Map.get(map, :id, Map.get(map, "id", "unknown"))
+            provider = Map.get(map, :provider, Map.get(map, "provider", "unknown"))
+
+            Logger.warning(
+              "Validation failed for model #{inspect(provider)}:#{inspect(model_id)}: #{inspect(error)}"
+            )
+
+            {valid_acc, invalid_acc + 1}
         end
       end)
 

@@ -1,4 +1,4 @@
-defmodule LLMModels.NormalizeTest do
+defmodule LLMModels.Engine.NormalizeTest do
   use ExUnit.Case, async: true
 
   alias LLMModels.Normalize
@@ -25,9 +25,9 @@ defmodule LLMModels.NormalizeTest do
     end
 
     test "converts simple binary provider ID to atom" do
-      assert {:ok, :openai} = Normalize.normalize_provider_id("openai", unsafe: true)
-      assert {:ok, :anthropic} = Normalize.normalize_provider_id("anthropic", unsafe: true)
-      assert {:ok, :cohere} = Normalize.normalize_provider_id("cohere", unsafe: true)
+      assert {:ok, :test_alpha} = Normalize.normalize_provider_id("test_alpha", unsafe: true)
+      assert {:ok, :test_beta} = Normalize.normalize_provider_id("test_beta", unsafe: true)
+      assert {:ok, :test_gamma} = Normalize.normalize_provider_id("test_gamma", unsafe: true)
     end
 
     test "passes through already-atom providers unchanged" do
@@ -69,29 +69,29 @@ defmodule LLMModels.NormalizeTest do
 
   describe "normalize_model_identity/1" do
     test "extracts provider and id from model map with binary provider" do
-      model = %{provider: "google-vertex", id: "gemini-pro"}
-      assert {:ok, {:google_vertex, "gemini-pro"}} = Normalize.normalize_model_identity(model)
+      model = %{provider: "test-provider-alpha", id: "test-model-pro"}
+      assert {:ok, {:test_provider_alpha, "test-model-pro"}} = Normalize.normalize_model_identity(model)
     end
 
     test "extracts provider and id from model map with atom provider" do
-      model = %{provider: :openai, id: "gpt-4"}
-      assert {:ok, {:openai, "gpt-4"}} = Normalize.normalize_model_identity(model)
+      model = %{provider: :test_provider_alpha, id: "test-model-v1"}
+      assert {:ok, {:test_provider_alpha, "test-model-v1"}} = Normalize.normalize_model_identity(model)
     end
 
     test "handles provider with underscores" do
-      model = %{provider: "azure_openai", id: "gpt-4-turbo"}
+      model = %{provider: "test_provider_beta", id: "test-model-v2"}
 
-      assert {:ok, {:azure_openai, "gpt-4-turbo"}} =
+      assert {:ok, {:test_provider_beta, "test-model-v2"}} =
                Normalize.normalize_model_identity(model, unsafe: true)
     end
 
     test "returns error when id is missing" do
-      model = %{provider: "openai"}
+      model = %{provider: "test-provider"}
       assert {:error, :missing_id} = Normalize.normalize_model_identity(model)
     end
 
     test "returns error when provider is missing" do
-      model = %{id: "gpt-4"}
+      model = %{id: "test-model"}
       assert {:error, :missing_provider} = Normalize.normalize_model_identity(model)
     end
 
@@ -106,14 +106,14 @@ defmodule LLMModels.NormalizeTest do
     end
 
     test "returns error when id is not a string" do
-      model = %{provider: "openai", id: 123}
+      model = %{provider: "test-provider", id: 123}
       assert {:error, :invalid_id} = Normalize.normalize_model_identity(model)
     end
 
     test "handles complex model IDs" do
-      model = %{provider: "anthropic", id: "claude-3-opus-20240229"}
+      model = %{provider: "test-provider-alpha", id: "test-model-v3-advanced-20240229"}
 
-      assert {:ok, {:anthropic, "claude-3-opus-20240229"}} =
+      assert {:ok, {:test_provider_alpha, "test-model-v3-advanced-20240229"}} =
                Normalize.normalize_model_identity(model)
     end
   end
@@ -175,17 +175,17 @@ defmodule LLMModels.NormalizeTest do
   describe "normalize_providers/1" do
     test "normalizes list of provider maps" do
       providers = [
-        %{id: "google-vertex", name: "Google Vertex AI"},
-        %{id: :openai, name: "OpenAI"},
-        %{id: "anthropic", name: "Anthropic"}
+        %{id: "test-provider-alpha", name: "Test Provider Alpha"},
+        %{id: :test_provider_beta, name: "Test Provider Beta"},
+        %{id: "test-provider-gamma", name: "Test Provider Gamma"}
       ]
 
       normalized = Normalize.normalize_providers(providers)
 
       assert [
-               %{id: :google_vertex, name: "Google Vertex AI"},
-               %{id: :openai, name: "OpenAI"},
-               %{id: :anthropic, name: "Anthropic"}
+               %{id: :test_provider_alpha, name: "Test Provider Alpha"},
+               %{id: :test_provider_beta, name: "Test Provider Beta"},
+               %{id: :test_provider_gamma, name: "Test Provider Gamma"}
              ] = normalized
     end
 
@@ -196,14 +196,14 @@ defmodule LLMModels.NormalizeTest do
     test "preserves provider maps without id" do
       providers = [
         %{name: "Some Provider"},
-        %{id: "openai", name: "OpenAI"}
+        %{id: "test-provider", name: "Test Provider"}
       ]
 
       normalized = Normalize.normalize_providers(providers)
 
       assert [
                %{name: "Some Provider"},
-               %{id: :openai, name: "OpenAI"}
+               %{id: :test_provider, name: "Test Provider"}
              ] = normalized
     end
 
@@ -224,10 +224,10 @@ defmodule LLMModels.NormalizeTest do
     test "preserves all other fields in provider maps" do
       providers = [
         %{
-          id: "google-vertex",
-          name: "Google Vertex AI",
-          base_url: "https://vertex.googleapis.com",
-          env: ["GOOGLE_API_KEY"],
+          id: "test-provider-alpha",
+          name: "Test Provider Alpha",
+          base_url: "https://alpha.example.com",
+          env: ["TEST_API_KEY"],
           extra: %{some: "data"}
         }
       ]
@@ -236,10 +236,10 @@ defmodule LLMModels.NormalizeTest do
 
       assert [
                %{
-                 id: :google_vertex,
-                 name: "Google Vertex AI",
-                 base_url: "https://vertex.googleapis.com",
-                 env: ["GOOGLE_API_KEY"],
+                 id: :test_provider_alpha,
+                 name: "Test Provider Alpha",
+                 base_url: "https://alpha.example.com",
+                 env: ["TEST_API_KEY"],
                  extra: %{some: "data"}
                }
              ] = normalized
@@ -249,17 +249,17 @@ defmodule LLMModels.NormalizeTest do
   describe "normalize_models/1" do
     test "normalizes list of model maps" do
       models = [
-        %{provider: "google-vertex", id: "gemini-pro"},
-        %{provider: :openai, id: "gpt-4"},
-        %{provider: "anthropic", id: "claude-3-opus"}
+        %{provider: "test-provider-alpha", id: "test-model-pro"},
+        %{provider: :test_provider_beta, id: "test-model-v1"},
+        %{provider: "test-provider-gamma", id: "test-model-v2"}
       ]
 
       normalized = Normalize.normalize_models(models)
 
       assert [
-               %{provider: :google_vertex, id: "gemini-pro"},
-               %{provider: :openai, id: "gpt-4"},
-               %{provider: :anthropic, id: "claude-3-opus"}
+               %{provider: :test_provider_alpha, id: "test-model-pro"},
+               %{provider: :test_provider_beta, id: "test-model-v1"},
+               %{provider: :test_provider_gamma, id: "test-model-v2"}
              ] = normalized
     end
 
@@ -270,14 +270,14 @@ defmodule LLMModels.NormalizeTest do
     test "preserves model maps without provider" do
       models = [
         %{id: "some-model"},
-        %{provider: "openai", id: "gpt-4"}
+        %{provider: "test-provider", id: "test-model"}
       ]
 
       normalized = Normalize.normalize_models(models)
 
       assert [
                %{id: "some-model"},
-               %{provider: :openai, id: "gpt-4"}
+               %{provider: :test_provider, id: "test-model"}
              ] = normalized
     end
 
@@ -298,10 +298,10 @@ defmodule LLMModels.NormalizeTest do
     test "preserves all other fields in model maps" do
       models = [
         %{
-          provider: "google-vertex",
-          id: "gemini-pro",
-          name: "Gemini Pro",
-          family: "gemini",
+          provider: "test-provider-alpha",
+          id: "test-model-pro",
+          name: "Test Model Pro",
+          family: "test-model",
           release_date: "2024-01-15",
           capabilities: %{chat: true},
           tags: ["production"],
@@ -313,10 +313,10 @@ defmodule LLMModels.NormalizeTest do
 
       assert [
                %{
-                 provider: :google_vertex,
-                 id: "gemini-pro",
-                 name: "Gemini Pro",
-                 family: "gemini",
+                 provider: :test_provider_alpha,
+                 id: "test-model-pro",
+                 name: "Test Model Pro",
+                 family: "test-model",
                  release_date: "2024-01-15",
                  capabilities: %{chat: true},
                  tags: ["production"],

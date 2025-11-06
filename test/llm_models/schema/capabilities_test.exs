@@ -94,9 +94,10 @@ defmodule LLMModels.Schema.CapabilitiesTest do
       assert result.chat == true
       assert result.embeddings == false
       assert result.tools.enabled == true
-      assert result.tools.streaming == false
-      assert result.tools.strict == false
-      assert result.tools.parallel == false
+      # Nested defaults are not applied by schema - applied in enrichment stage
+      refute Map.has_key?(result.tools, :streaming)
+      refute Map.has_key?(result.tools, :strict)
+      refute Map.has_key?(result.tools, :parallel)
     end
 
     test "parses reasoning with token_budget" do
@@ -171,25 +172,29 @@ defmodule LLMModels.Schema.CapabilitiesTest do
   end
 
   describe "nested defaults" do
-    test "applies nested defaults when parent is provided but fields missing" do
+    test "does not apply nested defaults during schema validation (applied in enrichment)" do
       input = %{tools: %{enabled: true}}
       assert {:ok, result} = Zoi.parse(Capabilities.schema(), input)
-      assert result.tools.streaming == false
-      assert result.tools.strict == false
-      assert result.tools.parallel == false
+      # Only the provided field is present
+      assert result.tools.enabled == true
+      refute Map.has_key?(result.tools, :streaming)
+      refute Map.has_key?(result.tools, :strict)
+      refute Map.has_key?(result.tools, :parallel)
     end
 
-    test "applies nested defaults for json" do
+    test "does not apply nested defaults for json (applied in enrichment)" do
       input = %{json: %{native: true}}
       assert {:ok, result} = Zoi.parse(Capabilities.schema(), input)
-      assert result.json.schema == false
-      assert result.json.strict == false
+      assert result.json.native == true
+      refute Map.has_key?(result.json, :schema)
+      refute Map.has_key?(result.json, :strict)
     end
 
-    test "applies nested defaults for streaming" do
+    test "does not apply nested defaults for streaming (applied in enrichment)" do
       input = %{streaming: %{tool_calls: true}}
       assert {:ok, result} = Zoi.parse(Capabilities.schema(), input)
-      assert result.streaming.text == true
+      assert result.streaming.tool_calls == true
+      refute Map.has_key?(result.streaming, :text)
     end
   end
 

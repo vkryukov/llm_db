@@ -1,7 +1,8 @@
-defmodule LLMModels.EnrichTest do
+defmodule LLMModels.Engine.EnrichTest do
   use ExUnit.Case, async: true
 
   alias LLMModels.Enrich
+  alias LLMModels.Test.Fixtures
 
   doctest LLMModels.Enrich
 
@@ -68,92 +69,79 @@ defmodule LLMModels.EnrichTest do
 
   describe "enrich_model/1" do
     test "adds family from ID when not present" do
-      input = %{id: "gpt-4o-mini", provider: :openai}
+      input = Fixtures.model_with_derivable_family()
       result = Enrich.enrich_model(input)
 
-      assert result.id == "gpt-4o-mini"
-      assert result.provider == :openai
-      assert result.family == "gpt-4o"
+      assert result.id == input.id
+      assert result.provider == input.provider
+      assert result.family == Fixtures.expected_family_for_model(input.id)
     end
 
     test "preserves existing family" do
-      input = %{id: "gpt-4o-mini", provider: :openai, family: "custom-family"}
+      input = Fixtures.model_with_existing_family()
       result = Enrich.enrich_model(input)
 
       assert result.family == "custom-family"
     end
 
     test "does not add family when cannot be derived" do
-      input = %{id: "model", provider: :openai}
+      input = Fixtures.model_single_segment()
       result = Enrich.enrich_model(input)
 
-      assert result.id == "model"
-      assert result.provider == :openai
+      assert result.id == input.id
+      assert result.provider == input.provider
       refute Map.has_key?(result, :family)
     end
 
     test "adds provider_model_id from ID when not present" do
-      input = %{id: "gpt-4o-mini", provider: :openai}
+      input = Fixtures.model_with_derivable_family()
       result = Enrich.enrich_model(input)
 
-      assert result.provider_model_id == "gpt-4o-mini"
+      assert result.provider_model_id == input.id
     end
 
     test "preserves existing provider_model_id" do
-      input = %{id: "gpt-4o-mini", provider: :openai, provider_model_id: "gpt-4o-mini-2024-07-18"}
+      input = Fixtures.model_with_derivable_family(%{provider_model_id: "custom-provider-id"})
       result = Enrich.enrich_model(input)
 
-      assert result.provider_model_id == "gpt-4o-mini-2024-07-18"
+      assert result.provider_model_id == "custom-provider-id"
     end
 
     test "enriches both fields when both missing" do
-      input = %{id: "claude-3-opus", provider: :anthropic}
+      input = Fixtures.model_with_derivable_family(%{id: "test-v3-advanced"})
       result = Enrich.enrich_model(input)
 
-      assert result.id == "claude-3-opus"
-      assert result.provider == :anthropic
-      assert result.family == "claude-3"
-      assert result.provider_model_id == "claude-3-opus"
+      assert result.id == "test-v3-advanced"
+      assert result.provider == input.provider
+      assert result.family == "test-v3"
+      assert result.provider_model_id == "test-v3-advanced"
     end
 
     test "preserves all existing fields" do
-      input = %{
-        id: "gpt-4o-mini",
-        provider: :openai,
-        name: "GPT-4o Mini",
-        release_date: "2024-07-18",
-        limits: %{context: 128_000},
-        cost: %{input: 0.15, output: 0.60},
-        capabilities: %{chat: true},
-        tags: ["fast"],
-        deprecated?: false,
-        aliases: ["mini"],
-        extra: %{"custom" => "value"}
-      }
-
+      input = Fixtures.model_complete()
       result = Enrich.enrich_model(input)
 
-      assert result.id == "gpt-4o-mini"
-      assert result.provider == :openai
-      assert result.name == "GPT-4o Mini"
-      assert result.release_date == "2024-07-18"
-      assert result.limits == %{context: 128_000}
-      assert result.cost == %{input: 0.15, output: 0.60}
-      assert result.capabilities == %{chat: true}
-      assert result.tags == ["fast"]
-      assert result.deprecated? == false
-      assert result.aliases == ["mini"]
-      assert result.extra == %{"custom" => "value"}
-      assert result.family == "gpt-4o"
-      assert result.provider_model_id == "gpt-4o-mini"
+      assert result.id == input.id
+      assert result.provider == input.provider
+      assert result.name == input.name
+      assert result.release_date == input.release_date
+      assert result.limits == input.limits
+      assert result.cost == input.cost
+      assert result.capabilities == input.capabilities
+      assert result.tags == input.tags
+      assert result.deprecated == input.deprecated
+      assert result.aliases == input.aliases
+      assert result.extra == input.extra
+      assert result.family == Fixtures.expected_family_for_model(input.id)
+      assert result.provider_model_id == input.id
     end
 
     test "handles models with single segment IDs" do
-      input = %{id: "model", provider: :custom, provider_model_id: "custom-id"}
+      input = Fixtures.model_single_segment(%{provider_model_id: "custom-id"})
       result = Enrich.enrich_model(input)
 
-      assert result.id == "model"
-      assert result.provider == :custom
+      assert result.id == input.id
+      assert result.provider == input.provider
       assert result.provider_model_id == "custom-id"
       refute Map.has_key?(result, :family)
     end
@@ -165,35 +153,30 @@ defmodule LLMModels.EnrichTest do
     end
 
     test "enriches single model" do
-      models = [%{id: "gpt-4o", provider: :openai}]
+      models = [Fixtures.model_with_derivable_family(%{id: "test-v1"})]
       result = Enrich.enrich_models(models)
 
       assert length(result) == 1
-      assert hd(result).id == "gpt-4o"
-      assert hd(result).family == "gpt"
-      assert hd(result).provider_model_id == "gpt-4o"
+      assert hd(result).id == "test-v1"
+      assert hd(result).family == "test"
+      assert hd(result).provider_model_id == "test-v1"
     end
 
     test "enriches multiple models" do
-      models = [
-        %{id: "gpt-4o-mini", provider: :openai},
-        %{id: "claude-3-opus", provider: :anthropic},
-        %{id: "gemini-1.5-pro", provider: :google}
-      ]
-
+      models = Fixtures.models_for_enrichment()
       result = Enrich.enrich_models(models)
 
       assert length(result) == 3
-      assert Enum.at(result, 0).family == "gpt-4o"
-      assert Enum.at(result, 1).family == "claude-3"
-      assert Enum.at(result, 2).family == "gemini-1.5"
+      assert Enum.at(result, 0).family == "test-model-v1"
+      assert Enum.at(result, 1).family == "test-model-v2"
+      assert Enum.at(result, 2).family == "test-model-v3"
     end
 
     test "preserves order of models" do
       models = [
-        %{id: "first-model", provider: :p1},
-        %{id: "second-model", provider: :p2},
-        %{id: "third-model", provider: :p3}
+        %{id: "first-model", provider: :test_provider_alpha},
+        %{id: "second-model", provider: :test_provider_beta},
+        %{id: "third-model", provider: :test_provider_gamma}
       ]
 
       result = Enrich.enrich_models(models)
@@ -202,30 +185,21 @@ defmodule LLMModels.EnrichTest do
     end
 
     test "enriches models with mixed completeness" do
-      models = [
-        %{id: "gpt-4o", provider: :openai},
-        %{id: "claude-3-opus", provider: :anthropic, family: "custom"},
-        %{id: "gemini-1.5-pro", provider: :google, provider_model_id: "gemini-1.5-pro-002"}
-      ]
-
+      models = Fixtures.models_mixed_enrichment()
       result = Enrich.enrich_models(models)
 
-      assert Enum.at(result, 0).family == "gpt"
-      assert Enum.at(result, 0).provider_model_id == "gpt-4o"
+      assert Enum.at(result, 0).family == "test-model"
+      assert Enum.at(result, 0).provider_model_id == "test-model-v1"
 
       assert Enum.at(result, 1).family == "custom"
-      assert Enum.at(result, 1).provider_model_id == "claude-3-opus"
+      assert Enum.at(result, 1).provider_model_id == "test-model-v2-pro"
 
-      assert Enum.at(result, 2).family == "gemini-1.5"
-      assert Enum.at(result, 2).provider_model_id == "gemini-1.5-pro-002"
+      assert Enum.at(result, 2).family == "test-model-v3"
+      assert Enum.at(result, 2).provider_model_id == "test-model-v3-flash-002"
     end
 
     test "handles models where family cannot be derived" do
-      models = [
-        %{id: "model", provider: :custom},
-        %{id: "another", provider: :custom}
-      ]
-
+      models = Fixtures.models_no_derivable_family()
       result = Enrich.enrich_models(models)
 
       assert length(result) == 2
@@ -240,19 +214,16 @@ defmodule LLMModels.EnrichTest do
     test "enrichment works before validation" do
       alias LLMModels.Validate
 
-      raw_model = %{
-        id: "gpt-4o-mini",
-        provider: :openai
-      }
+      raw_model = Fixtures.model_with_derivable_family(%{id: "test-model-v2-mini"})
 
       enriched = Enrich.enrich_model(raw_model)
       assert {:ok, validated} = Validate.validate_model(enriched)
 
-      assert validated.id == "gpt-4o-mini"
-      assert validated.provider == :openai
-      assert validated.family == "gpt-4o"
-      assert validated.provider_model_id == "gpt-4o-mini"
-      assert validated.deprecated? == false
+      assert validated.id == "test-model-v2-mini"
+      assert validated.provider == :test_provider_alpha
+      assert validated.family == "test-model-v2"
+      assert validated.provider_model_id == "test-model-v2-mini"
+      assert validated.deprecated == false
       assert validated.aliases == []
     end
 
@@ -260,8 +231,8 @@ defmodule LLMModels.EnrichTest do
       alias LLMModels.Validate
 
       raw_models = [
-        %{id: "gpt-4o", provider: :openai},
-        %{id: "claude-3-opus", provider: :anthropic},
+        %{id: "test-model-v1", provider: :test_provider_alpha},
+        %{id: "test-model-v2-pro", provider: :test_provider_beta},
         %{id: "invalid", provider: "string-not-atom"}
       ]
 
@@ -269,16 +240,16 @@ defmodule LLMModels.EnrichTest do
       assert {:ok, valid, 1} = Validate.validate_models(enriched)
 
       assert length(valid) == 2
-      assert Enum.at(valid, 0).family == "gpt"
-      assert Enum.at(valid, 1).family == "claude-3"
+      assert Enum.at(valid, 0).family == "test-model"
+      assert Enum.at(valid, 1).family == "test-model-v2"
     end
 
     test "enrichment preserves complex nested structures for validation" do
       alias LLMModels.Validate
 
       raw_model = %{
-        id: "gpt-4o-mini",
-        provider: :openai,
+        id: "test-model-v2-advanced",
+        provider: :test_provider_alpha,
         limits: %{context: 128_000, output: 16_384},
         cost: %{input: 0.15, output: 0.60},
         capabilities: %{
@@ -294,7 +265,7 @@ defmodule LLMModels.EnrichTest do
       enriched = Enrich.enrich_model(raw_model)
       assert {:ok, validated} = Validate.validate_model(enriched)
 
-      assert validated.family == "gpt-4o"
+      assert validated.family == "test-model-v2"
       assert validated.limits.context == 128_000
       assert validated.cost.input == 0.15
       assert validated.capabilities.chat == true

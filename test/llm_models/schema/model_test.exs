@@ -13,7 +13,7 @@ defmodule LLMModels.Schema.ModelTest do
       assert {:ok, result} = Zoi.parse(Model.schema(), input)
       assert result.id == "gpt-4o-mini"
       assert result.provider == :openai
-      assert result.deprecated? == false
+      assert result.deprecated == false
       assert result.aliases == []
     end
 
@@ -38,7 +38,7 @@ defmodule LLMModels.Schema.ModelTest do
           tools: %{enabled: true, streaming: true}
         },
         tags: ["fast", "cheap"],
-        deprecated?: false,
+        deprecated: false,
         aliases: ["gpt-4o-mini-latest"],
         extra: %{"custom" => "value"}
       }
@@ -62,17 +62,17 @@ defmodule LLMModels.Schema.ModelTest do
       assert result.capabilities.tools.enabled == true
       assert result.capabilities.tools.streaming == true
       assert result.tags == ["fast", "cheap"]
-      assert result.deprecated? == false
+      assert result.deprecated == false
       assert result.aliases == ["gpt-4o-mini-latest"]
       assert result.extra == %{"custom" => "value"}
     end
   end
 
   describe "defaults" do
-    test "deprecated? defaults to false" do
+    test "deprecated defaults to false" do
       input = %{id: "gpt-4o", provider: :openai}
       assert {:ok, result} = Zoi.parse(Model.schema(), input)
-      assert result.deprecated? == false
+      assert result.deprecated == false
     end
 
     test "aliases defaults to empty list" do
@@ -81,10 +81,10 @@ defmodule LLMModels.Schema.ModelTest do
       assert result.aliases == []
     end
 
-    test "can override deprecated? to true" do
-      input = %{id: "gpt-3.5-turbo", provider: :openai, deprecated?: true}
+    test "can override deprecated to true" do
+      input = %{id: "gpt-3.5-turbo", provider: :openai, deprecated: true}
       assert {:ok, result} = Zoi.parse(Model.schema(), input)
-      assert result.deprecated? == true
+      assert result.deprecated == true
     end
   end
 
@@ -188,8 +188,8 @@ defmodule LLMModels.Schema.ModelTest do
       assert {:error, _} = Zoi.parse(Model.schema(), input)
     end
 
-    test "rejects non-boolean deprecated?" do
-      input = %{id: "gpt-4o", provider: :openai, deprecated?: "true"}
+    test "rejects non-boolean deprecated" do
+      input = %{id: "gpt-4o", provider: :openai, deprecated: "true"}
       assert {:error, _} = Zoi.parse(Model.schema(), input)
     end
 

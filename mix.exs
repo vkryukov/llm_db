@@ -48,6 +48,7 @@ defmodule LLMModels.MixProject do
       {:jason, "~> 1.4"},
       {:toml, "~> 0.7"},
       {:req, "~> 0.5"},
+      {:deep_merge, "~> 1.0"},
       {:plug, "~> 1.16", only: :test},
       {:meck, "~> 0.9", only: :test},
       {:ex_doc, "~> 0.31", only: :dev, runtime: false},

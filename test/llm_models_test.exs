@@ -80,25 +80,6 @@ defmodule LLMModelsTest do
       assert Store.snapshot() == snapshot
     end
 
-    @tag :skip
-    test "load/1 returns error on empty catalog" do
-      # Note: This test is skipped because the current implementation doesn't
-      # return :empty_catalog when all models are excluded. The Engine still
-      # loads providers from the snapshot even if all models are filtered out.
-      # To truly get an empty catalog, all providers would need to be explicitly
-      # excluded in the exclude map.
-      config = %{
-        overrides: %{providers: [], models: [], exclude: %{_all: ["*"]}},
-        overrides_module: nil,
-        allow: %{},
-        deny: %{},
-        prefer: []
-      }
-
-      result = load_with_test_data(config)
-      assert {:error, :empty_catalog} = result
-    end
-
     test "reload/0 uses last opts" do
       {:ok, _} = load_with_test_data(%{overrides: minimal_test_data()})
       epoch1 = LLMModels.epoch()

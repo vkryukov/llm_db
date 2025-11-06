@@ -1,6 +1,7 @@
-defmodule LLMModels.MergeTest do
+defmodule LLMModels.Engine.MergeTest do
   use ExUnit.Case, async: true
   alias LLMModels.Merge
+  alias LLMModels.Test.Fixtures
 
   doctest LLMModels.Merge
 

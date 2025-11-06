@@ -79,35 +79,43 @@ defmodule LLMModels.Sources.Local do
   defp scan_provider_directory(provider_dir, provider_id, acc, file_reader, dir_reader) do
     files = dir_reader.(provider_dir)
 
-    provider_data = %{id: provider_id, models: []}
+    # Convert provider_id string to atom for canonical format
+    provider_atom = String.to_atom(provider_id)
+    provider_data = %{id: provider_atom, models: []}
 
     result =
       Enum.reduce(files, provider_data, fn file, provider_acc ->
         if String.ends_with?(file, ".toml") do
           file_path = Path.join(provider_dir, file)
-          load_toml_file(file_path, provider_id, file, provider_acc, file_reader)
+          load_toml_file(file_path, provider_atom, file, provider_acc, file_reader)
         else
           provider_acc
         end
       end)
 
-    Map.put(acc, to_string(provider_id), result)
+    Map.put(acc, provider_id, result)
   rescue
     e ->
       Logger.warning("Failed to scan provider directory #{provider_dir}: #{inspect(e)}")
       acc
   end
 
-  defp load_toml_file(file_path, provider_id, filename, provider_data, file_reader) do
+  defp load_toml_file(file_path, provider_atom, filename, provider_data, file_reader) do
     content = file_reader.(file_path)
     decoded = Toml.decode!(content)
 
     # Provider definition file (always named "provider.toml")
     if filename == "provider.toml" do
-      Map.merge(provider_data, decoded)
+      # Atomize keys for provider data
+      atomized = atomize_map(decoded)
+      Map.merge(provider_data, atomized)
     else
-      # Model definition file
-      model = Map.put_new(decoded, "provider", provider_id)
+      # Model definition file - atomize keys and ensure provider is set
+      model =
+        decoded
+        |> atomize_map()
+        |> Map.put(:provider, provider_atom)
+
       %{provider_data | models: [model | provider_data.models]}
     end
   rescue
@@ -115,4 +123,16 @@ defmodule LLMModels.Sources.Local do
       Logger.warning("Failed to parse TOML file #{file_path}: #{inspect(e)}")
       provider_data
   end
+
+  # Recursively atomize string keys in maps
+  defp atomize_map(map) when is_map(map) do
+    Map.new(map, fn {key, value} ->
+      atom_key = if is_binary(key), do: String.to_atom(key), else: key
+      {atom_key, atomize_value(value)}
+    end)
+  end
+
+  defp atomize_value(map) when is_map(map), do: atomize_map(map)
+  defp atomize_value(list) when is_list(list), do: Enum.map(list, &atomize_value/1)
+  defp atomize_value(value), do: value
 end

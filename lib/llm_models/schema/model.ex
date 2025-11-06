@@ -33,7 +33,7 @@ defmodule LLMModels.Schema.Model do
               |> Zoi.optional(),
             capabilities: @capabilities_schema |> Zoi.optional(),
             tags: Zoi.array(Zoi.string()) |> Zoi.optional(),
-            deprecated?: Zoi.boolean() |> Zoi.default(false),
+            deprecated: Zoi.boolean() |> Zoi.default(false),
             aliases: Zoi.array(Zoi.string()) |> Zoi.default([]),
             extra: Zoi.map() |> Zoi.optional()
           })

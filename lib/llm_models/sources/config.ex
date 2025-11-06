@@ -112,10 +112,23 @@ defmodule LLMModels.Sources.Config do
         to_string(m[:provider] || m["provider"])
       end)
 
-    Enum.reduce(provider_map, %{}, fn {provider_id, provider_data}, acc ->
-      provider_models = Map.get(models_by_provider, provider_id, [])
-      provider_with_models = Map.put(provider_data, :models, provider_models)
-      Map.put(acc, provider_id, provider_with_models)
+    # Start with existing providers
+    base_map =
+      Enum.reduce(provider_map, %{}, fn {provider_id, provider_data}, acc ->
+        provider_models = Map.get(models_by_provider, provider_id, [])
+        provider_with_models = Map.put(provider_data, :models, provider_models)
+        Map.put(acc, provider_id, provider_with_models)
+      end)
+
+    # Add any providers that only have models (no provider entry)
+    Enum.reduce(models_by_provider, base_map, fn {provider_id, provider_models}, acc ->
+      if Map.has_key?(acc, provider_id) do
+        acc
+      else
+        # Create minimal provider entry with id and models
+        provider_atom = String.to_existing_atom(provider_id)
+        Map.put(acc, provider_id, %{id: provider_atom, models: provider_models})
+      end
     end)
   end
 end

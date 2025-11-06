@@ -32,7 +32,7 @@ defmodule LLMModels.Engine do
 
   require Logger
 
-  alias LLMModels.{Config, Enrich, Merge, Normalize, Validate}
+  alias LLMModels.{Config, Enrich, Merge, Normalize, Source, Validate}
 
   @doc """
   Runs the complete ETL pipeline to generate a model catalog snapshot.
@@ -52,18 +52,20 @@ defmodule LLMModels.Engine do
   - `{:ok, snapshot_map}` - Empty catalog (warns but succeeds if no sources)
   - `{:error, term}` - Other error
 
-  ## Snapshot Structure
+  ## Snapshot Structure (v2)
 
   ```elixir
   %{
+    # Internal indexes (not serialized to JSON)
     providers_by_id: %{atom => Provider.t()},
     models_by_key: %{{atom, String.t()} => Model.t()},
     aliases_by_key: %{{atom, String.t()} => String.t()},
-    providers: [Provider.t()],
-    models: %{atom => [Model.t()]},
     filters: %{allow: compiled, deny: compiled},
     prefer: [atom],
-    meta: %{epoch: nil, generated_at: String.t()}
+    # V2 output structure (serialized to JSON)
+    version: 2,
+    generated_at: String.t(),
+    providers: %{atom => %{provider_fields + models: %{String.t() => Model.t()}}}
   }
   ```
   """
@@ -100,6 +102,9 @@ defmodule LLMModels.Engine do
       Enum.map(sources_list, fn {module, source_opts} ->
         case module.load(source_opts) do
           {:ok, data} ->
+            # Assert canonical format - fail fast if source forgot to transform
+            Source.assert_canonical!(data)
+
             {providers, models} = flatten_nested_data(data)
 
             %{
@@ -120,11 +125,30 @@ defmodule LLMModels.Engine do
       end)
 
     # Get filters and prefer from opts or config
+    # Support both separate :allow/:deny options and combined :filters option
+    {allow, deny} =
+      case Keyword.get(opts, :filters) do
+        %{allow: allow_val, deny: deny_val} ->
+          {allow_val, deny_val}
+
+        %{deny: deny_val} ->
+          {:all, deny_val}
+
+        %{allow: allow_val} ->
+          {allow_val, %{}}
+
+        nil ->
+          {Keyword.get(opts, :allow, config.allow), Keyword.get(opts, :deny, config.deny)}
+
+        _ ->
+          {config.allow, config.deny}
+      end
+
     layers_data = %{
       layers: source_layers,
       filters: %{
-        allow: Keyword.get(opts, :allow, config.allow),
-        deny: Keyword.get(opts, :deny, config.deny)
+        allow: allow,
+        deny: deny
       },
       prefer: Keyword.get(opts, :prefer, config.prefer)
     }
@@ -213,22 +237,24 @@ defmodule LLMModels.Engine do
     # Step 2: Enrich - derive family, ensure provider_model_id, apply defaults
     enriched_models = Enrich.enrich_models(filtered_models)
 
-    # Step 3: Index - build lookup indexes for O(1) access
+    # Step 3: Index - build lookup indexes for O(1) access (still needed internally)
     indexes = build_indexes(merged.providers, enriched_models)
 
-    # Step 4: Build snapshot structure
+    # Step 4: Build nested v2 structure for snapshot
+    nested_providers = build_nested_providers(merged.providers, indexes.models_by_provider)
+
+    # Step 5: Build snapshot structure (v2 schema)
     snapshot = %{
+      # Internal indexes for runtime use (not serialized)
       providers_by_id: indexes.providers_by_id,
       models_by_key: indexes.models_by_key,
       aliases_by_key: indexes.aliases_by_key,
-      providers: merged.providers,
-      models: indexes.models_by_provider,
       filters: compiled_filters,
       prefer: merged.prefer,
-      meta: %{
-        epoch: nil,
-        generated_at: DateTime.utc_now() |> DateTime.to_iso8601()
-      }
+      # V2 output structure (for JSON serialization)
+      version: 2,
+      generated_at: DateTime.utc_now() |> DateTime.to_iso8601(),
+      providers: nested_providers
     }
 
     {:ok, snapshot}
@@ -237,9 +263,14 @@ defmodule LLMModels.Engine do
   # Stage 6: Ensure viable - warn on empty catalog but don't error
   defp ensure_viable(snapshot) do
     providers = snapshot.providers
-    models = Map.values(snapshot.models) |> List.flatten()
 
-    if providers == [] or models == [] do
+    total_models =
+      providers
+      |> Map.values()
+      |> Enum.map(fn provider -> map_size(provider.models) end)
+      |> Enum.sum()
+
+    if map_size(providers) == 0 or total_models == 0 do
       Logger.warning("Empty catalog generated - no providers or models found")
     end
 
@@ -348,6 +379,49 @@ defmodule LLMModels.Engine do
     |> Map.new()
   end
 
+  @doc """
+  Builds the nested v2 provider structure for snapshot serialization.
+
+  Groups models by provider and nests them under their provider.
+  Models are keyed by model.id for easy lookup.
+
+  ## Parameters
+
+  - `providers` - List of provider maps
+  - `models_by_provider` - %{atom => [Model.t()]}
+
+  ## Returns
+
+  %{atom => %{provider fields + models: %{string => model}}}
+  """
+  @spec build_nested_providers([map()], %{atom() => [map()]}) :: %{atom() => map()}
+  def build_nested_providers(providers, models_by_provider) do
+    providers
+    |> Enum.map(fn provider ->
+      provider_id = provider.id
+      provider_models = Map.get(models_by_provider, provider_id, [])
+
+      # Build models map keyed by model ID
+      models_map =
+        provider_models
+        |> Enum.map(fn model ->
+          # Keep provider field for convenience (though redundant in nested structure)
+          {model.id, model}
+        end)
+        |> Enum.sort_by(fn {id, _model} -> id end)
+        |> Map.new()
+
+      # Merge provider data with nested models
+      nested_provider =
+        provider
+        |> Map.put(:models, models_map)
+
+      {provider_id, nested_provider}
+    end)
+    |> Enum.sort_by(fn {id, _provider} -> to_string(id) end)
+    |> Map.new()
+  end
+
   # Private helpers
 
   # Merge models with special list handling rules
@@ -364,25 +438,24 @@ defmodule LLMModels.Engine do
     |> Map.values()
   end
 
-  # Deep merge with special list handling
+  # Deep merge with special list handling using DeepMerge
   defp deep_merge_with_list_rules(left, right) when is_map(left) and is_map(right) do
-    Map.merge(left, right, fn key, left_val, right_val ->
-      cond do
-        is_map(left_val) and is_map(right_val) ->
-          deep_merge_with_list_rules(left_val, right_val)
+    DeepMerge.deep_merge(left, right, fn
+      # Special case: union aliases lists
+      key, left_val, right_val when key == :aliases and is_list(left_val) and is_list(right_val) ->
+        Enum.uniq(right_val ++ left_val)
 
-        is_list(left_val) and is_list(right_val) ->
-          # Union-dedupe for aliases, replace for others
-          if key in [:aliases] do
-            (right_val ++ left_val) |> Enum.uniq()
-          else
-            right_val
-          end
+      # For all other lists: replace (right wins)
+      _key, left_val, right_val when is_list(left_val) and is_list(right_val) ->
+        right_val
 
-        true ->
-          # Scalar: last wins (right has higher precedence)
-          right_val
-      end
+      # For maps: continue deep merge
+      _key, left_val, right_val when is_map(left_val) and is_map(right_val) ->
+        DeepMerge.continue_deep_merge()
+
+      # For scalars: right wins
+      _key, _left_val, right_val ->
+        right_val
     end)
   end
 

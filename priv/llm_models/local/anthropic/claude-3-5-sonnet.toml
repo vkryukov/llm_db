@@ -1,6 +1,5 @@
 # Claude 3.5 Sonnet Model Definition
 id = "claude-3-5-sonnet-20241022"
-provider = "anthropic"
 provider_model_id = "claude-3-5-sonnet-20241022"
 name = "Claude 3.5 Sonnet"
 family = "claude-3.5"
@@ -9,19 +8,21 @@ knowledge = "2024-04"
 aliases = ["claude-3-5-sonnet"]
 
 [limits]
-max_input_tokens = 200000
-max_output_tokens = 8192
+context = 200000
+output = 8192
 
 [cost]
-input_per_1m = 3.00
-output_per_1m = 15.00
+input = 3.00
+output = 15.00
+cache_read = 0.30
+cache_write = 3.75
 
 [modalities]
 input = ["text", "image"]
 output = ["text"]
 
-[capabilities]
-streaming = true
-function_calling = true
-vision = true
-prompt_caching = true
+[capabilities.tools]
+enabled = true
+
+[capabilities.streaming]
+text = true

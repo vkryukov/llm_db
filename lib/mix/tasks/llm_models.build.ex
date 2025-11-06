@@ -63,24 +63,30 @@ defmodule Mix.Tasks.LlmModels.Build do
     |> Path.dirname()
     |> File.mkdir_p!()
 
+    # V2 schema: nested providers with models
     output_data = %{
-      "providers" => Enum.map(snapshot.providers, &map_with_string_keys/1),
-      "models" =>
-        Map.values(snapshot.models) |> List.flatten() |> Enum.map(&map_with_string_keys/1)
+      "version" => snapshot.version,
+      "generated_at" => snapshot.generated_at,
+      "providers" => map_with_string_keys(snapshot.providers)
     }
 
     json = Jason.encode!(output_data, pretty: true)
     File.write!(@snapshot_path, json)
 
-    Mix.shell().info("✓ Snapshot written to #{@snapshot_path}")
-    
+    Mix.shell().info("✓ Snapshot written to #{@snapshot_path} (v#{snapshot.version})")
+
     # Generate ValidProviders module from normalized snapshot data
     generate_valid_providers(snapshot)
   end
 
   defp print_summary(snapshot) do
-    provider_count = length(snapshot.providers)
-    model_count = Map.values(snapshot.models) |> Enum.map(&length/1) |> Enum.sum()
+    provider_count = map_size(snapshot.providers)
+
+    model_count =
+      snapshot.providers
+      |> Map.values()
+      |> Enum.map(fn provider -> map_size(provider.models) end)
+      |> Enum.sum()
 
     Mix.shell().info("")
     Mix.shell().info("Summary:")
@@ -103,10 +109,10 @@ defmodule Mix.Tasks.LlmModels.Build do
 
   # Generate ValidProviders module from normalized snapshot data
   defp generate_valid_providers(snapshot) do
-    # Extract provider atoms from normalized providers (these already have underscores)
+    # Extract provider atoms from nested providers map
     provider_atoms =
       snapshot.providers
-      |> Enum.map(& &1.id)
+      |> Map.keys()
       |> Enum.sort()
       |> Enum.uniq()
 

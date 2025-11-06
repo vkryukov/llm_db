@@ -9,6 +9,7 @@ defmodule LLMModels.Schema.Cost do
   @schema Zoi.object(%{
             input: Zoi.number() |> Zoi.optional(),
             output: Zoi.number() |> Zoi.optional(),
+            request: Zoi.number() |> Zoi.optional(),
             cache_read: Zoi.number() |> Zoi.optional(),
             cache_write: Zoi.number() |> Zoi.optional(),
             training: Zoi.number() |> Zoi.optional(),

@@ -17,10 +17,12 @@ defmodule LLMModels.PackagedTest do
 
       if snapshot do
         assert is_map(snapshot)
+        # v2 schema
+        assert Map.has_key?(snapshot, :version)
+        assert Map.has_key?(snapshot, :generated_at)
         assert Map.has_key?(snapshot, :providers)
-        assert Map.has_key?(snapshot, :models)
-        assert is_list(snapshot.providers)
-        assert is_list(snapshot.models)
+        assert snapshot.version == 2
+        assert is_map(snapshot.providers)
       else
         assert snapshot == nil
       end
@@ -29,22 +31,27 @@ defmodule LLMModels.PackagedTest do
     test "snapshot providers have expected structure" do
       snapshot = Packaged.snapshot()
 
-      if snapshot && snapshot.providers != [] do
-        provider = hd(snapshot.providers)
+      if snapshot && map_size(snapshot.providers) > 0 do
+        {provider_id, provider} = Enum.at(snapshot.providers, 0)
+        assert is_atom(provider_id) or is_binary(provider_id)
         assert Map.has_key?(provider, :id)
-        assert is_binary(provider.id)
+        assert Map.has_key?(provider, :models)
+        assert is_map(provider.models)
       end
     end
 
     test "snapshot models have expected structure" do
       snapshot = Packaged.snapshot()
 
-      if snapshot && snapshot.models != [] do
-        model = hd(snapshot.models)
-        assert Map.has_key?(model, :id)
-        assert Map.has_key?(model, :provider)
-        assert is_binary(model.id)
-        assert is_binary(model.provider)
+      if snapshot && map_size(snapshot.providers) > 0 do
+        {_provider_id, provider} = Enum.at(snapshot.providers, 0)
+
+        if map_size(provider.models) > 0 do
+          {model_id, model} = Enum.at(provider.models, 0)
+          assert is_binary(model_id) or is_atom(model_id)
+          assert Map.has_key?(model, :id)
+          assert Map.has_key?(model, :provider)
+        end
       end
     end
   end

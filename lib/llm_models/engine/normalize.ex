@@ -216,7 +216,8 @@ defmodule LLMModels.Normalize do
                       :video,
                       :code,
                       :document,
-                      :embedding
+                      :embedding,
+                      :pdf
                     ])
 
   defp normalize_modality_atom(value) when is_binary(value) do

@@ -71,6 +71,7 @@ defmodule LLMModels.Enrich do
     model
     |> maybe_set_family()
     |> maybe_set_provider_model_id()
+    |> apply_capability_defaults()
   end
 
   @doc """
@@ -109,5 +110,38 @@ defmodule LLMModels.Enrich do
 
   defp maybe_set_provider_model_id(%{id: id} = model) do
     Map.put(model, :provider_model_id, id)
+  end
+
+  defp apply_capability_defaults(model) do
+    case Map.get(model, :capabilities) do
+      nil ->
+        model
+
+      caps ->
+        enriched_caps =
+          caps
+          |> apply_nested_defaults(:reasoning, %{enabled: false})
+          |> apply_nested_defaults(:tools, %{
+            enabled: false,
+            streaming: false,
+            strict: false,
+            parallel: false
+          })
+          |> apply_nested_defaults(:json, %{native: false, schema: false, strict: false})
+          |> apply_nested_defaults(:streaming, %{text: true, tool_calls: false})
+
+        Map.put(model, :capabilities, enriched_caps)
+    end
+  end
+
+  defp apply_nested_defaults(caps, key, defaults) do
+    case Map.get(caps, key) do
+      nil ->
+        caps
+
+      existing when is_map(existing) ->
+        merged = Map.merge(defaults, existing)
+        Map.put(caps, key, merged)
+    end
   end
 end

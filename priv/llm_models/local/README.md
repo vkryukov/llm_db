@@ -1,6 +1,6 @@
 # Local TOML Model Definitions
 
-This directory contains example TOML files for defining custom LLM providers and models.
+This directory contains example TOML files for defining custom LLM providers and models using the **canonical schema format**.
 
 ## Directory Structure
 
@@ -36,41 +36,97 @@ env = ["API_KEY_VAR"]        # Optional: environment variable names
 custom_field = "value"
 ```
 
-## Model TOML Schema
+## Model TOML Schema (Canonical Format)
+
+**IMPORTANT**: Local TOML files must use the canonical schema format exactly as defined in `lib/llm_models/schema/model.ex`. No transformation is applied - fields are used as-is after atomizing keys.
 
 ```toml
+# Required Fields
 id = "model-id"                      # Required: unique model identifier
-provider = "provider-id"             # Required: links to provider
-provider_model_id = "api-model-id"   # Optional: provider's model ID
-name = "Model Display Name"          # Optional
+
+# Optional Identity Fields
+provider_model_id = "api-model-id"   # Optional: provider's API model ID
+name = "Model Display Name"          # Optional: human-readable name
 family = "model-family"              # Optional: model family/series
 release_date = "2024-01-15"         # Optional: ISO date
-knowledge = "2024-01"               # Optional: knowledge cutoff
+last_updated = "2024-02-20"         # Optional: last update date
+knowledge = "2024-01"               # Optional: knowledge cutoff date
 tags = ["tag1", "tag2"]             # Optional: categorization tags
-aliases = ["alias1"]                # Optional: alternative names
-deprecated = false                  # Optional: deprecation status
+aliases = ["alias1"]                # Optional: alternative model names
+deprecated = false                  # Optional: deprecation status (default: false)
 
+# Limits (all values must be integers >= 1)
 [limits]
-max_input_tokens = 128000           # Optional
-max_output_tokens = 4096            # Optional
+context = 128000                    # Optional: max context window tokens
+output = 4096                       # Optional: max output tokens
 
+# Cost (per 1M tokens, floating point)
 [cost]
-input_per_1m = 1.00                 # Optional: cost per 1M input tokens
-output_per_1m = 2.00                # Optional: cost per 1M output tokens
+input = 1.00                        # Optional: input cost per 1M tokens
+output = 2.00                       # Optional: output cost per 1M tokens
+cache_read = 0.10                   # Optional: cache read cost per 1M tokens
+cache_write = 1.25                  # Optional: cache write cost per 1M tokens
+training = 5.00                     # Optional: training cost
+image = 0.50                        # Optional: image processing cost
+audio = 0.25                        # Optional: audio processing cost
 
+# Modalities (arrays of strings - converted to atoms)
 [modalities]
-input = ["text", "image"]           # Optional: input types
-output = ["text"]                   # Optional: output types
+input = ["text", "image", "audio"]  # Optional: input modalities
+output = ["text"]                   # Optional: output modalities
+# Valid modalities: text, image, audio, video, code, document, embedding, pdf
 
-[capabilities]
-streaming = true                    # Optional
-function_calling = true             # Optional
-vision = true                       # Optional
-prompt_caching = false             # Optional
+# Capabilities (nested structure with defaults from schema)
+[capabilities.reasoning]
+enabled = true                      # Optional: reasoning capability
+token_budget = 10000               # Optional: reasoning token budget
 
-[extra]                             # Optional: custom fields
+[capabilities.tools]
+enabled = true                      # Optional: tool/function calling
+streaming = false                   # Optional: streaming tool calls
+strict = false                      # Optional: strict schema enforcement
+parallel = false                    # Optional: parallel tool execution
+
+[capabilities.json]
+native = false                      # Optional: native JSON mode
+schema = false                      # Optional: JSON schema support
+strict = false                      # Optional: strict JSON validation
+
+[capabilities.streaming]
+text = true                         # Optional: text streaming (default: true)
+tool_calls = false                  # Optional: tool call streaming
+
+# Note: capabilities.chat and capabilities.embeddings have defaults (true/false)
+# and can be omitted unless you need to override them
+
+# Extra Fields (arbitrary nested data preserved as-is)
+[extra]
 deployment_id = "prod-001"
+custom_metadata = "value"
 ```
+
+## Field Mapping Reference
+
+The Local source uses the **canonical schema** directly (after atomizing keys). Field names must match the schema exactly:
+
+### Limits
+- ✅ Use: `limits.context` and `limits.output`
+- ❌ Not: `max_input_tokens`, `max_output_tokens`
+- Values must be integers >= 1 (0 is invalid)
+
+### Cost
+- ✅ Use: `cost.input`, `cost.output`, `cost.cache_read`, `cost.cache_write`
+- ❌ Not: `input_per_1m`, `output_per_1m`
+- Values are floating point numbers (cost per 1M tokens)
+
+### Capabilities
+- Use nested TOML tables for capability groups
+- Example: `[capabilities.tools]` with `enabled = true`
+- All capability fields have schema defaults (can be omitted)
+
+### Modalities
+- String arrays that get converted to atom arrays during load
+- Valid values: `text`, `image`, `audio`, `video`, `code`, `document`, `embedding`, `pdf`
 
 ## Usage
 
@@ -98,7 +154,9 @@ See the example files in this directory:
 
 ## Notes
 
-- All IDs should be lowercase with underscores (e.g., `my_provider`, not `my-provider`)
-- Atoms can contain dashes but underscores are normalized
-- The `provider` field in model files is automatically added if missing (uses directory name)
+- All IDs should be lowercase with hyphens or underscores (e.g., `my-provider` or `my_provider`)
+- The `provider` field is automatically set from the directory name (you can omit it from TOML)
+- String keys in TOML are automatically converted to atoms during load
+- Values are used as-is (no transformation) - must match canonical schema
 - Parse errors in individual files are logged but don't stop processing
+- Invalid models (that fail schema validation) are logged and dropped

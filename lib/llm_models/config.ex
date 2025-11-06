@@ -103,6 +103,27 @@ defmodule LLMModels.Config do
 
   defp compile_patterns(:all), do: :all
 
+  defp compile_patterns(patterns) when is_list(patterns) do
+    # List format: ["provider:model_id", "provider:model-*"]
+    # Parse spec strings and group by provider
+    patterns
+    |> Enum.reduce(%{}, fn spec, acc ->
+      case parse_spec(spec) do
+        {:ok, provider, model_pattern} ->
+          Map.update(acc, provider, [model_pattern], fn existing ->
+            [model_pattern | existing]
+          end)
+
+        :error ->
+          acc
+      end
+    end)
+    |> Map.new(fn {provider, pattern_list} ->
+      compiled = Enum.map(pattern_list, &LLMModels.Merge.compile_pattern/1)
+      {provider, compiled}
+    end)
+  end
+
   defp compile_patterns(patterns) when is_map(patterns) do
     Map.new(patterns, fn {provider, pattern_list} ->
       compiled = Enum.map(pattern_list, &LLMModels.Merge.compile_pattern/1)
@@ -111,4 +132,15 @@ defmodule LLMModels.Config do
   end
 
   defp compile_patterns(_), do: %{}
+
+  # Parse spec string "provider:model_id" into {provider_atom, model_id}
+  defp parse_spec(spec) when is_binary(spec) do
+    case String.split(spec, ":", parts: 2) do
+      [provider_str, model_id] when provider_str != "" and model_id != "" ->
+        {:ok, String.to_atom(provider_str), model_id}
+
+      _ ->
+        :error
+    end
+  end
 end

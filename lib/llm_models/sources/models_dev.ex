@@ -103,7 +103,7 @@ defmodule LLMModels.Sources.ModelsDev do
     case File.read(cache_path) do
       {:ok, bin} ->
         case Jason.decode(bin) do
-          {:ok, decoded} -> {:ok, normalize(decoded)}
+          {:ok, decoded} -> {:ok, transform(decoded)}
           {:error, err} -> {:error, {:json_error, err}}
         end
 
@@ -114,6 +114,59 @@ defmodule LLMModels.Sources.ModelsDev do
         {:error, reason}
     end
   end
+
+  @doc """
+  Transforms models.dev JSON format to canonical Zoi format.
+
+  ## Input Format (models.dev)
+
+  ```json
+  {
+    "provider_id": {
+      "id": "provider_id",
+      "name": "Provider Name",
+      "models": {
+        "model_id": {
+          "id": "model_id",
+          "name": "Model Name",
+          "limit": {"context": 128000, "output": 16384},
+          "cost": {"input": 2.50, "output": 10.00},
+          ...
+        }
+      }
+    }
+  }
+  ```
+
+  ## Output Format (Canonical Zoi)
+
+  ```elixir
+  %{
+    "provider_id" => %{
+      id: :provider_id,
+      name: "Provider Name",
+      models: [
+        %{
+          id: "model_id",
+          provider: :provider_id,
+          name: "Model Name",
+          limits: %{context: 128000, output: 16384},
+          cost: %{input: 2.50, output: 10.00},
+          ...
+        }
+      ]
+    }
+  }
+  ```
+
+  Main transformations:
+  - Convert provider string IDs to atom keys
+  - Convert models map to models list
+  - Add provider field to each model
+  - Transform field names (limit → limits, etc.)
+  - Atomize known field keys
+  """
+  def transform(content) when is_map(content), do: do_transform(content)
 
   # Private helpers
 
@@ -186,7 +239,144 @@ defmodule LLMModels.Sources.ModelsDev do
     end
   end
 
-  defp normalize(content) when is_map(content) do
+  # Fields we explicitly map to canonical Zoi fields (should not go to extra)
+  @mapped_fields ~w[
+    id name knowledge release_date last_updated
+    limit cost modalities reasoning tool_call
+    aliases deprecated
+  ]
+
+  # Transform a single model from models.dev format to canonical Zoi format
+  defp transform_model(model, provider_id) do
+    # Build canonical model map with explicit field mappings
+    canonical =
+      %{
+        id: model["id"],
+        provider: provider_id,
+        name: model["name"]
+      }
+      |> put_if_present(:knowledge, model["knowledge"])
+      |> put_if_present(:release_date, model["release_date"])
+      |> put_if_present(:last_updated, model["last_updated"])
+      |> put_if_present(:aliases, model["aliases"])
+      |> put_if_present(:deprecated, model["deprecated"])
+      |> map_limits(model["limit"])
+      |> map_cost(model["cost"])
+      |> map_modalities(model["modalities"])
+      |> map_capabilities(model)
+      |> map_extra(model)
+
+    canonical
+  end
+
+  # Map models.dev "limit" to canonical "limits"
+  defp map_limits(model, nil), do: model
+
+  defp map_limits(model, limit) when is_map(limit) do
+    limits =
+      %{}
+      |> put_if_valid_limit(:context, limit["context"])
+      |> put_if_valid_limit(:output, limit["output"])
+
+    if map_size(limits) > 0 do
+      Map.put(model, :limits, limits)
+    else
+      model
+    end
+  end
+
+  # Map models.dev "cost" (passthrough with atom keys)
+  defp map_cost(model, nil), do: model
+
+  defp map_cost(model, cost) when is_map(cost) do
+    cost_canonical =
+      %{}
+      |> put_if_present(:input, cost["input"])
+      |> put_if_present(:output, cost["output"])
+      |> put_if_present(:cache_read, cost["cache_read"])
+      |> put_if_present(:cache_write, cost["cache_write"])
+      |> put_if_present(:training, cost["training"])
+      |> put_if_present(:image, cost["image"])
+      |> put_if_present(:audio, cost["audio"])
+
+    if map_size(cost_canonical) > 0 do
+      Map.put(model, :cost, cost_canonical)
+    else
+      model
+    end
+  end
+
+  # Map models.dev "modalities" (atomize keys, values normalized later)
+  defp map_modalities(model, nil), do: model
+
+  defp map_modalities(model, modalities) when is_map(modalities) do
+    # Atomize the input/output keys for Normalize to process
+    modalities_atomized =
+      modalities
+      |> Enum.reduce(%{}, fn {key, value}, acc ->
+        atom_key =
+          case key do
+            "input" -> :input
+            "output" -> :output
+            other -> String.to_atom(other)
+          end
+
+        Map.put(acc, atom_key, value)
+      end)
+
+    Map.put(model, :modalities, modalities_atomized)
+  end
+
+  # Map models.dev boolean flags to canonical capabilities structure
+  defp map_capabilities(model, source_model) do
+    capabilities =
+      %{}
+      |> put_if_true(:reasoning, %{enabled: true}, source_model["reasoning"])
+      |> put_if_true(:tools, %{enabled: true}, source_model["tool_call"])
+
+    if map_size(capabilities) > 0 do
+      Map.put(model, :capabilities, capabilities)
+    else
+      model
+    end
+  end
+
+  # Collect unmapped fields into "extra" map
+  defp map_extra(model, source_model) do
+    extra =
+      source_model
+      |> Map.drop(@mapped_fields)
+      |> Enum.reduce(%{}, fn {key, value}, acc ->
+        # Convert string keys to atoms for consistency
+        atom_key = String.to_atom(key)
+        Map.put(acc, atom_key, value)
+      end)
+
+    if map_size(extra) > 0 do
+      Map.put(model, :extra, extra)
+    else
+      model
+    end
+  end
+
+  # Helper: put value if not nil
+  defp put_if_present(map, _key, nil), do: map
+  defp put_if_present(map, key, value), do: Map.put(map, key, value)
+
+  # Helper: put limit value if valid (not nil, not 0)
+  defp put_if_valid_limit(map, _key, nil), do: map
+  defp put_if_valid_limit(map, _key, 0), do: map
+  defp put_if_valid_limit(map, key, value) when is_integer(value) and value > 0 do
+    Map.put(map, key, value)
+  end
+  defp put_if_valid_limit(map, _key, _value), do: map
+
+  # Helper: put nested map if boolean is true
+  defp put_if_true(map, _key, _value, nil), do: map
+  defp put_if_true(map, _key, _value, false), do: map
+  defp put_if_true(map, key, value, true), do: Map.put(map, key, value)
+
+  defp do_transform(content) when is_map(content) do
     # models.dev format: top-level keys are provider IDs,
     # each containing provider metadata + nested "models" map
     # Transform to nested format: %{provider_id => %{...provider, models: [...]}}
@@ -199,14 +389,12 @@ defmodule LLMModels.Sources.ModelsDev do
       # Extract models from nested map and convert to list
       models_map = Map.get(provider_data, "models", %{})
 
-      # Add provider field to each model and atomize keys
+      # Add provider field to each model and transform to canonical format
       models_list =
         models_map
         |> Map.values()
         |> Enum.map(fn model ->
-          model
-          |> Map.put("provider", provider_id)
-          |> atomize_keys([:id, :provider, :name, :aliases, :deprecated?, :capabilities])
+          transform_model(model, provider_id)
         end)
 
       # Replace models map with models list and store
@@ -215,7 +403,7 @@ defmodule LLMModels.Sources.ModelsDev do
     end)
   end
 
-  defp normalize(_), do: %{}
+  defp do_transform(_), do: %{}
 
   # Convert string keys to atom keys for specific known fields
   defp atomize_keys(map, keys) when is_map(map) do

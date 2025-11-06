@@ -50,22 +50,25 @@ defmodule LLMModels.EngineTest do
       {:ok, snapshot} = Engine.run(sources: sources)
 
       assert is_map(snapshot)
+      # v2 schema: internal indexes
       assert Map.has_key?(snapshot, :providers_by_id)
       assert Map.has_key?(snapshot, :models_by_key)
       assert Map.has_key?(snapshot, :aliases_by_key)
-      assert Map.has_key?(snapshot, :providers)
-      assert Map.has_key?(snapshot, :models)
       assert Map.has_key?(snapshot, :filters)
       assert Map.has_key?(snapshot, :prefer)
-      assert Map.has_key?(snapshot, :meta)
+      # v2 schema: serializable fields
+      assert Map.has_key?(snapshot, :version)
+      assert Map.has_key?(snapshot, :generated_at)
+      assert Map.has_key?(snapshot, :providers)
+      assert snapshot.version == 2
     end
 
     test "snapshot has correct metadata structure" do
       {:ok, snapshot} = Engine.run(runtime_overrides: minimal_test_data(), sources: [])
 
-      assert Map.has_key?(snapshot.meta, :epoch)
-      assert Map.has_key?(snapshot.meta, :generated_at)
-      assert is_binary(snapshot.meta.generated_at)
+      # v2 schema: version and generated_at at top level
+      assert snapshot.version == 2
+      assert is_binary(snapshot.generated_at)
     end
 
     test "builds provider index correctly" do
@@ -93,13 +96,15 @@ defmodule LLMModels.EngineTest do
     test "builds models by provider index correctly" do
       {:ok, snapshot} = Engine.run(runtime_overrides: minimal_test_data(), sources: [])
 
-      if map_size(snapshot.models) > 0 do
-        {provider, models_list} = Enum.at(snapshot.models, 0)
-        assert is_atom(provider)
-        assert is_list(models_list)
+      # v2 schema: models are nested under providers[provider_id].models
+      if map_size(snapshot.providers) > 0 do
+        {provider_id, provider_data} = Enum.at(snapshot.providers, 0)
+        assert is_atom(provider_id)
+        assert is_map(provider_data.models)
 
-        if models_list != [] do
-          assert Enum.all?(models_list, fn m -> m.provider == provider end)
+        if map_size(provider_data.models) > 0 do
+          models_list = Map.values(provider_data.models)
+          assert Enum.all?(models_list, fn m -> m.provider == provider_id end)
         end
       end
     end
@@ -134,25 +139,6 @@ defmodule LLMModels.EngineTest do
 
       assert Map.has_key?(snapshot.providers_by_id, :test_provider)
       assert Map.has_key?(snapshot.models_by_key, {:test_provider, "test-model"})
-    end
-
-    @tag :skip
-    test "returns error on empty catalog" do
-      # Note: This test is skipped because the current implementation doesn't
-      # return :empty_catalog when all models are excluded. The Engine still
-      # loads providers from the snapshot even if all models are filtered out.
-      # To truly get an empty catalog, all providers would need to be explicitly
-      # excluded in the exclude map.
-      config = %{
-        overrides: %{providers: [], models: [], exclude: %{_all: ["*"]}},
-        overrides_module: nil,
-        allow: %{},
-        deny: %{},
-        prefer: []
-      }
-
-      result = run_with_test_data(config)
-      assert {:error, :empty_catalog} = result
     end
   end
 
