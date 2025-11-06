@@ -5,7 +5,7 @@ A focused, reusable Elixir package for LLM model metadata with a simple ETL pipe
 ## 1) What this package is and why it exists
 
 - **Package**: `llm_models`
-- **Namespace**: `LlmModels`
+- **Namespace**: `LLMModels`
 - **Purpose**: Provide a standalone, fast, and explicit model catalog for Elixir AI libraries. It ships with a packaged snapshot, supports manual refresh from models.dev, and offers a minimal, capability-aware query API. It also owns canonical parsing of "provider:model" specs.
 - **Why**: Centralize model metadata lifecycle (ingest → normalize → validate → enrich → index → publish) behind a simple, reusable library, decoupled from ReqLLM. Emphasize: stability (no magic), explicit updates only, fast lookup, and clear precedence rules.
 
@@ -23,7 +23,7 @@ A focused, reusable Elixir package for LLM model metadata with a simple ETL pipe
 
 ## 3) Public API (high level)
 
-### Module: `LlmModels`
+### Module: `LLMModels`
 
 #### Lifecycle
 
@@ -66,20 +66,20 @@ A focused, reusable Elixir package for LLM model metadata with a simple ETL pipe
 
 ```elixir
 # Boot
-{:ok, _} = LlmModels.load()
+{:ok, _} = LLMModels.load()
 
 # Canonical spec parsing and resolution
-{:ok, {:openai, "gpt-4o-mini"}} = LlmModels.parse_spec("openai:gpt-4o-mini")
-{:ok, {prov, id, model}} = LlmModels.resolve("openai:gpt-4o-mini")
+{:ok, {:openai, "gpt-4o-mini"}} = LLMModels.parse_spec("openai:gpt-4o-mini")
+{:ok, {prov, id, model}} = LLMModels.resolve("openai:gpt-4o-mini")
 
 # Simple selection
-LlmModels.select(
+LLMModels.select(
   require: [tools: true, json_native: true],
   prefer: [:openai, :anthropic]
 )
 
 # Retrieve capabilities
-caps = LlmModels.capabilities({:openai, "gpt-4o-mini"})
+caps = LLMModels.capabilities({:openai, "gpt-4o-mini"})
 caps.tools.enabled      # boolean
 caps.tools.streaming    # boolean
 ```
@@ -90,11 +90,11 @@ No `typed_struct` or `NimbleOptions`. Use `zoi` for schema validation and to gen
 
 ### Schema modules
 
-- `LlmModels.Schema.Provider`
-- `LlmModels.Schema.Model`
-- `LlmModels.Schema.Capabilities`
-- `LlmModels.Schema.Limits`
-- `LlmModels.Schema.Cost`
+- `LLMModels.Schema.Provider`
+- `LLMModels.Schema.Model`
+- `LLMModels.Schema.Capabilities`
+- `LLMModels.Schema.Limits`
+- `LLMModels.Schema.Cost`
 
 **Notes**:
 - Use `Zoi.parse/2` for validation and defaulting
@@ -106,7 +106,7 @@ No `typed_struct` or `NimbleOptions`. Use `zoi` for schema validation and to gen
 #### Provider
 
 ```elixir
-defmodule LlmModels.Schema.Provider do
+defmodule LLMModels.Schema.Provider do
   @schema Zoi.object(%{
     id: Zoi.atom(),
     name: Zoi.string() |> Zoi.optional(),
@@ -123,7 +123,7 @@ end
 #### Limits
 
 ```elixir
-defmodule LlmModels.Schema.Limits do
+defmodule LLMModels.Schema.Limits do
   @schema Zoi.object(%{
     context: Zoi.integer() |> Zoi.min(1) |> Zoi.optional(),
     output: Zoi.integer() |> Zoi.min(1) |> Zoi.optional()
@@ -136,7 +136,7 @@ end
 #### Cost (per 1M tokens)
 
 ```elixir
-defmodule LlmModels.Schema.Cost do
+defmodule LLMModels.Schema.Cost do
   @schema Zoi.object(%{
     input: Zoi.number() |> Zoi.optional(),
     output: Zoi.number() |> Zoi.optional(),
@@ -154,7 +154,7 @@ end
 #### Capabilities (minimal but covers transport vs feature)
 
 ```elixir
-defmodule LlmModels.Schema.Capabilities do
+defmodule LLMModels.Schema.Capabilities do
   @schema Zoi.object(%{
     chat: Zoi.boolean() |> Zoi.default(true),
     embeddings: Zoi.boolean() |> Zoi.default(false),
@@ -186,7 +186,7 @@ end
 #### Model
 
 ```elixir
-defmodule LlmModels.Schema.Model do
+defmodule LLMModels.Schema.Model do
   @schema Zoi.object(%{
     id: Zoi.string(),
     provider: Zoi.atom(),
@@ -196,13 +196,13 @@ defmodule LlmModels.Schema.Model do
     release_date: Zoi.string() |> Zoi.optional(),
     last_updated: Zoi.string() |> Zoi.optional(),
     knowledge: Zoi.string() |> Zoi.optional(),
-    limits: LlmModels.Schema.Limits.schema() |> Zoi.optional(),
-    cost: LlmModels.Schema.Cost.schema() |> Zoi.optional(),
+    limits: LLMModels.Schema.Limits.schema() |> Zoi.optional(),
+    cost: LLMModels.Schema.Cost.schema() |> Zoi.optional(),
     modalities: Zoi.object(%{
       input: Zoi.array(Zoi.atom()) |> Zoi.optional(),
       output: Zoi.array(Zoi.atom()) |> Zoi.optional()
     }) |> Zoi.optional(),
-    capabilities: LlmModels.Schema.Capabilities.schema() |> Zoi.optional(),
+    capabilities: LLMModels.Schema.Capabilities.schema() |> Zoi.optional(),
     tags: Zoi.array(Zoi.string()) |> Zoi.optional(),
     deprecated?: Zoi.boolean() |> Zoi.default(false),
     aliases: Zoi.array(Zoi.string()) |> Zoi.default([]),
@@ -267,11 +267,11 @@ end
 ## 6) Storage and loading architecture
 
 - **Compile-time embedding**:
-  - `LlmModels.Packaged` reads `priv/llm_models/snapshot.json` at compile time, decodes it to a term, and stores it in a module attribute (using `@external_resource` to trigger recompilation on file changes)
+  - `LLMModels.Packaged` reads `priv/llm_models/snapshot.json` at compile time, decodes it to a term, and stores it in a module attribute (using `@external_resource` to trigger recompilation on file changes)
   - Controlled by `config :llm_models, compile_embed: true` (default true)
 - **Runtime loading**:
-  - `LlmModels.load/1` merges: packaged term → config overrides → behaviour overrides, then validates/enriches and publishes to persistent_term
-  - `LlmModels.reload/0` rebuilds with last-known options and atomically swaps the `:llm_models_snapshot` key via `:persistent_term.put/2`
+  - `LLMModels.load/1` merges: packaged term → config overrides → behaviour overrides, then validates/enriches and publishes to persistent_term
+  - `LLMModels.reload/0` rebuilds with last-known options and atomically swaps the `:llm_models_snapshot` key via `:persistent_term.put/2`
 - **Reads**:
   - All read APIs fetch from `:persistent_term.get(:llm_models_snapshot)`; no ETS
 
@@ -312,14 +312,14 @@ config :llm_models,
 Provide a behaviour that applications can implement and a `use` macro that injects defaults and docs:
 
 ```elixir
-defmodule LlmModels.Overrides do
+defmodule LLMModels.Overrides do
   @callback providers() :: [map()]
   @callback models() :: [map()]
   @callback excludes() :: map()
 
   defmacro __using__(_opts) do
     quote do
-      @behaviour LlmModels.Overrides
+      @behaviour LLMModels.Overrides
       @impl true def providers, do: []
       @impl true def models, do: []
       @impl true def excludes, do: %{}
@@ -333,7 +333,7 @@ Preferred customization path:
 
 ```elixir
 defmodule MyApp.LlmModelOverrides do
-  use LlmModels.Overrides
+  use LLMModels.Overrides
 
   @impl true
   def providers do
@@ -374,8 +374,8 @@ During `load/1`, the engine reads `overrides_module` and merges its callbacks af
 ### `mix llm_models.activate [--from priv/llm_models/upstream.json]`
 
 - Validates and normalizes the given file(s), merges with existing local overrides, and writes a packaged-like snapshot file: `priv/llm_models/snapshot.json`
-- If `compile_embed: true`, changing this file marks it as `@external_resource` so recompile picks up the new term; otherwise call `LlmModels.reload/0` in dev to swap persistent_term
-- Production: prefer explicit `LlmModels.reload/0` after activation
+- If `compile_embed: true`, changing this file marks it as `@external_resource` so recompile picks up the new term; otherwise call `LLMModels.reload/0` in dev to swap persistent_term
+- Production: prefer explicit `LLMModels.reload/0` after activation
 
 **Notes**:
 - Mix tasks do not mutate persistent_term directly
@@ -398,12 +398,12 @@ During `load/1`, the engine reads `overrides_module` and merges its callbacks af
 **Examples**:
 
 ```elixir
-LlmModels.list_models(:openai,
+LLMModels.list_models(:openai,
   require: [tools: true],
   forbid: [streaming_tool_calls: true]
 )
 
-LlmModels.select(
+LLMModels.select(
   require: [chat: true, tools: true, json_native: true],
   prefer: [:openai, :anthropic]
 )
@@ -411,21 +411,21 @@ LlmModels.select(
 
 ## 11) Integration points for ReqLLM
 
-Replace JSON file path lookups with `LlmModels` API calls:
+Replace JSON file path lookups with `LLMModels` API calls:
 
 - **ReqLLM.Provider.Registry**
-  - Initialize from `LlmModels.snapshot/0`
-  - Use `LlmModels.parse_provider/1` and `LlmModels.parse_spec/1` for canonical parsing
+  - Initialize from `LLMModels.snapshot/0`
+  - Use `LLMModels.parse_provider/1` and `LLMModels.parse_spec/1` for canonical parsing
 - **ReqLLM.Model.from/1**
-  - Use `LlmModels.resolve/1` then `LlmModels.get_model/2`
+  - Use `LLMModels.resolve/1` then `LLMModels.get_model/2`
 - **ReqLLM.Capability**
-  - Use `LlmModels.capabilities/1`
+  - Use `LLMModels.capabilities/1`
 
 **Startup path**:
 
 ```elixir
-{:ok, _} = LlmModels.load()
-ReqLLM.Provider.Registry.initialize_from(LlmModels.snapshot())
+{:ok, _} = LLMModels.load()
+ReqLLM.Provider.Registry.initialize_from(LLMModels.snapshot())
 ```
 
 ## 12) Minimal module map (llm_models)
@@ -460,7 +460,7 @@ ReqLLM.Provider.Registry.initialize_from(LlmModels.snapshot())
 
 ### API and parsing (S)
 
-- [ ] Implement public API in `LlmModels` (load/reload/snapshot/list/get/allowed?/capabilities/select)
+- [ ] Implement public API in `LLMModels` (load/reload/snapshot/list/get/allowed?/capabilities/select)
 - [ ] Implement `spec.ex` with `parse_provider/1`, `parse_spec/1`, `resolve/1`
 
 ### Overrides (S)
@@ -476,10 +476,10 @@ ReqLLM.Provider.Registry.initialize_from(LlmModels.snapshot())
 
 ### Integration (ReqLLM) (M)
 
-- [ ] Provider.Registry: read from `LlmModels.snapshot/0`; safe spec parsing via `LlmModels.parse_provider/1` and `parse_spec/1`
-- [ ] Model.from/1 resolves via `LlmModels.resolve/1` → `get_model/2`
-- [ ] Capability predicates read from `LlmModels.capabilities/1`
-- [ ] Remove direct JSON reads and replace with `LlmModels` calls
+- [ ] Provider.Registry: read from `LLMModels.snapshot/0`; safe spec parsing via `LLMModels.parse_provider/1` and `parse_spec/1`
+- [ ] Model.from/1 resolves via `LLMModels.resolve/1` → `get_model/2`
+- [ ] Capability predicates read from `LLMModels.capabilities/1`
+- [ ] Remove direct JSON reads and replace with `LLMModels` calls
 
 ### Docs and config (S)
 
@@ -537,14 +537,14 @@ config :llm_models,
 ### Spec parsing and resolution
 
 ```elixir
-{:ok, {:openai, "gpt-4o-mini"}} = LlmModels.parse_spec("openai:gpt-4o-mini")
-{:ok, {p, m, model}} = LlmModels.resolve({:openai, "gpt-4o-mini"})
+{:ok, {:openai, "gpt-4o-mini"}} = LLMModels.parse_spec("openai:gpt-4o-mini")
+{:ok, {p, m, model}} = LLMModels.resolve({:openai, "gpt-4o-mini"})
 ```
 
 ### Listing models with filters
 
 ```elixir
-LlmModels.list_models(:openai,
+LLMModels.list_models(:openai,
   require: [tools: true],
   forbid: [streaming_tool_calls: true]
 )

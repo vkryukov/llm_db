@@ -3,6 +3,29 @@ defmodule LLMModels.EngineTest do
 
   alias LLMModels.Engine
 
+  setup do
+    # Clear any polluted application env
+    Application.delete_env(:llm_models, :allow)
+    Application.delete_env(:llm_models, :deny)
+    Application.delete_env(:llm_models, :prefer)
+    :ok
+  end
+
+  # Helper to convert old test config format to new sources format
+  defp run_with_test_data(config) when is_map(config) do
+    runtime_overrides = %{
+      providers: get_in(config, [:overrides, :providers]) || [],
+      models: get_in(config, [:overrides, :models]) || []
+    }
+
+    # Set application env for filters
+    if Map.has_key?(config, :allow), do: Application.put_env(:llm_models, :allow, config.allow)
+    if Map.has_key?(config, :deny), do: Application.put_env(:llm_models, :deny, config.deny)
+    if Map.has_key?(config, :prefer), do: Application.put_env(:llm_models, :prefer, config.prefer)
+
+    Engine.run(runtime_overrides: runtime_overrides)
+  end
+
   describe "run/1" do
     test "runs complete ETL pipeline with packaged snapshot" do
       {:ok, snapshot} = Engine.run()
@@ -88,7 +111,7 @@ defmodule LLMModels.EngineTest do
         prefer: []
       }
 
-      {:ok, snapshot} = Engine.run(config: config)
+      {:ok, snapshot} = run_with_test_data(config)
 
       assert Map.has_key?(snapshot.providers_by_id, :test_provider)
       assert Map.has_key?(snapshot.models_by_key, {:test_provider, "test-model"})
@@ -109,7 +132,7 @@ defmodule LLMModels.EngineTest do
         prefer: []
       }
 
-      result = Engine.run(config: config)
+      result = run_with_test_data(config)
       assert {:error, :empty_catalog} = result
     end
   end

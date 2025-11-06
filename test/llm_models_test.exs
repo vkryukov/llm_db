@@ -5,7 +5,26 @@ defmodule LLMModelsTest do
 
   setup do
     Store.clear!()
+    # Clear any polluted application env
+    Application.delete_env(:llm_models, :allow)
+    Application.delete_env(:llm_models, :deny)
+    Application.delete_env(:llm_models, :prefer)
     :ok
+  end
+
+  # Helper to convert old test config format to new sources format
+  defp load_with_test_data(config) when is_map(config) do
+    runtime_overrides = %{
+      providers: get_in(config, [:overrides, :providers]) || [],
+      models: get_in(config, [:overrides, :models]) || []
+    }
+
+    # Set application env for filters
+    if Map.has_key?(config, :allow), do: Application.put_env(:llm_models, :allow, config.allow)
+    if Map.has_key?(config, :deny), do: Application.put_env(:llm_models, :deny, config.deny)
+    if Map.has_key?(config, :prefer), do: Application.put_env(:llm_models, :prefer, config.prefer)
+
+    LLMModels.load(runtime_overrides: runtime_overrides)
   end
 
   describe "lifecycle functions" do
@@ -38,7 +57,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      result = LLMModels.load(config: config)
+      result = load_with_test_data(config)
       assert {:error, :empty_catalog} = result
     end
 
@@ -314,7 +333,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       assert LLMModels.allowed?({:test_provider, "test-model"}) == true
     end
@@ -334,7 +353,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       assert LLMModels.allowed?({:test_provider, "test-model"}) == false
     end
@@ -354,7 +373,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       assert LLMModels.allowed?("test_provider:test-model") == true
     end
@@ -390,7 +409,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       {:ok, {provider, model_id}} = LLMModels.select(require: [chat: true, tools: true])
 
@@ -422,7 +441,7 @@ defmodule LLMModelsTest do
         prefer: [:provider_b, :provider_a]
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       {:ok, {provider, model_id}} =
         LLMModels.select(require: [chat: true, tools: true], prefer: [:provider_b, :provider_a])
@@ -455,7 +474,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       {:ok, {provider, model_id}} = LLMModels.select(require: [chat: true], scope: :provider_a)
 
@@ -487,7 +506,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       {:ok, {provider, model_id}} =
         LLMModels.select(require: [chat: true], forbid: [embeddings: true])
@@ -515,7 +534,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       assert {:error, :no_match} = LLMModels.select(require: [tools: true])
     end
@@ -677,7 +696,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       models = LLMModels.list_models(:test_provider, require: [chat: true])
       assert length(models) == 1
@@ -708,7 +727,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       models = LLMModels.list_models(:test_provider, require: [tools: true])
       assert length(models) == 1
@@ -745,7 +764,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       models = LLMModels.list_models(:test_provider, require: [json_native: true])
       assert length(models) == 1
@@ -782,7 +801,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       models = LLMModels.list_models(:test_provider, require: [streaming_tool_calls: true])
       assert length(models) == 1
@@ -832,7 +851,7 @@ defmodule LLMModelsTest do
         prefer: [:provider_a, :provider_b]
       }
 
-      {:ok, snapshot} = LLMModels.load(config: config)
+      {:ok, snapshot} = load_with_test_data(config)
 
       assert is_map(snapshot)
 
@@ -896,7 +915,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       assert LLMModels.allowed?({:test_provider, "allowed-model"}) == true
       assert LLMModels.allowed?({:test_provider, "denied-model"}) == false
@@ -923,7 +942,7 @@ defmodule LLMModelsTest do
         prefer: []
       }
 
-      {:ok, _} = LLMModels.load(config: config)
+      {:ok, _} = load_with_test_data(config)
 
       models = LLMModels.list_models(:test_provider, require: [chat: true])
       assert models == []

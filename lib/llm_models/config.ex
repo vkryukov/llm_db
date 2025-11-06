@@ -6,6 +6,41 @@ defmodule LLMModels.Config do
   compiled filter patterns, and module-based overrides.
   """
 
+  require Logger
+
+  @doc """
+  Returns the list of sources to load, in precedence order.
+
+  ## Configuration
+
+      config :llm_models,
+        sources: [
+          {LLMModels.Sources.Packaged, %{}},
+          {LLMModels.Sources.Remote, %{paths: ["priv/llm_models/upstream/models-dev.json"]}},
+          {LLMModels.Sources.Local, %{dir: "priv/llm_models"}},
+          {LLMModels.Sources.Config, %{overrides: %{...}}}
+        ]
+
+  If not configured, returns default sources (Packaged only).
+
+  ## Returns
+
+  List of `{module, opts}` tuples in precedence order (first = lowest precedence).
+  """
+  @spec sources!() :: [{module(), map()}]
+  def sources! do
+    config = Application.get_all_env(:llm_models)
+
+    case Keyword.get(config, :sources) do
+      nil ->
+        # Default: just packaged snapshot
+        [{LLMModels.Sources.Packaged, %{}}]
+
+      sources when is_list(sources) ->
+        sources
+    end
+  end
+
   @doc """
   Returns normalized configuration map from Application environment.
 

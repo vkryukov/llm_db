@@ -23,6 +23,8 @@ defmodule LLMModels.MixProject do
     [
       {:zoi, "~> 0.8"},
       {:jason, "~> 1.4"},
+      {:toml, "~> 0.7"},
+      {:req, "~> 0.5"},
       {:meck, "~> 0.9", only: :test}
     ]
   end

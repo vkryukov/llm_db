@@ -48,12 +48,15 @@ defmodule Mix.Tasks.LLMModels.Pull do
   end
 
   defp download(url) do
-    case System.cmd("curl", ["-sS", "-L", url], stderr_to_stdout: true) do
-      {body, 0} ->
+    case Req.get(url) do
+      {:ok, %Req.Response{status: 200, body: body}} ->
         {:ok, body}
 
-      {error, _} ->
-        {:error, "curl failed: #{error}"}
+      {:ok, %Req.Response{status: status}} ->
+        {:error, "HTTP #{status}"}
+
+      {:error, reason} ->
+        {:error, reason}
     end
   end
 

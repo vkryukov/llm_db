@@ -8,7 +8,7 @@ defmodule LLMModels.Engine do
 
   require Logger
 
-  alias LLMModels.{Config, Packaged, Normalize, Validate, Merge, Enrich}
+  alias LLMModels.{Config, Normalize, Validate, Merge, Enrich}
 
   @doc """
   Runs the complete ETL pipeline to generate a model catalog snapshot.
@@ -16,9 +16,9 @@ defmodule LLMModels.Engine do
   ## Pipeline Stages
 
   1. **Ingest** - Collect data from sources in precedence order
-  2. **Normalize** - Apply normalization to providers and models
-  3. **Validate** - Validate schemas and log dropped records
-  4. **Merge** - Combine sources with precedence rules
+  2. **Normalize** - Apply normalization to providers and models per layer
+  3. **Validate** - Validate schemas and log dropped records per layer
+  4. **Merge** - Combine layers with precedence rules
   5. **Enrich** - Add derived fields and defaults
   6. **Filter** - Apply allow/deny patterns
   7. **Index** - Build lookup indexes
@@ -26,7 +26,8 @@ defmodule LLMModels.Engine do
 
   ## Options
 
-  - `:config` - Config map override (optional)
+  - `:sources` - List of `{module, opts}` source tuples (optional, overrides config)
+  - `:runtime_overrides` - Runtime override data (optional)
 
   ## Returns
 
@@ -51,10 +52,10 @@ defmodule LLMModels.Engine do
   """
   @spec run(keyword()) :: {:ok, map()} | {:error, term()}
   def run(opts \\ []) do
-    with {:ok, sources} <- ingest(opts),
-         {:ok, normalized} <- normalize(sources),
-         {:ok, validated} <- validate(normalized),
-         {:ok, merged} <- merge(validated),
+    with {:ok, layers_data} <- ingest(opts),
+         {:ok, normalized} <- normalize_layers(layers_data),
+         {:ok, validated} <- validate_layers(normalized),
+         {:ok, merged} <- merge_layers(validated),
          {:ok, enriched} <- enrich(merged),
          {:ok, filtered} <- filter(enriched),
          {:ok, snapshot} <- build_snapshot(filtered),
@@ -63,37 +64,53 @@ defmodule LLMModels.Engine do
     end
   end
 
-  # Stage 1: Ingest
+  # Stage 1: Ingest - load data from all sources
   defp ingest(opts) do
-    config = Keyword.get(opts, :config) || Config.get()
+    config = Config.get()
 
-    packaged = Packaged.snapshot() || %{providers: [], models: []}
-
-    config_overrides = config.overrides
-
-    behaviour_overrides =
-      if config.overrides_module do
-        Config.get_overrides_from_module(config.overrides_module)
-      else
-        %{providers: [], models: [], excludes: %{}}
+    # Get sources list (from opts or config)
+    sources_list =
+      case Keyword.get(opts, :sources) do
+        nil -> Config.sources!()
+        sources when is_list(sources) -> sources
       end
 
-    sources = %{
-      packaged: %{
-        providers: Map.get(packaged, :providers, []),
-        models: Map.get(packaged, :models, []),
-        excludes: %{}
-      },
-      config: %{
-        providers: config_overrides.providers,
-        models: config_overrides.models,
-        excludes: config_overrides.exclude
-      },
-      behaviour: %{
-        providers: behaviour_overrides.providers,
-        models: behaviour_overrides.models,
-        excludes: behaviour_overrides.excludes
-      },
+    # Add runtime overrides if provided
+    sources_list =
+      case Keyword.get(opts, :runtime_overrides) do
+        nil ->
+          sources_list
+
+        overrides ->
+          sources_list ++ [{LLMModels.Sources.Runtime, %{overrides: overrides}}]
+      end
+
+    # Load data from each source
+    layers =
+      Enum.map(sources_list, fn {module, source_opts} ->
+        case module.load(source_opts) do
+          {:ok, data} ->
+            {providers, models} = flatten_nested_data(data)
+
+            %{
+              name: module,
+              providers: providers,
+              models: models
+            }
+
+          {:error, reason} ->
+            Logger.warning("Source #{inspect(module)} failed to load: #{inspect(reason)}")
+
+            %{
+              name: module,
+              providers: [],
+              models: []
+            }
+        end
+      end)
+
+    layers_data = %{
+      layers: layers,
       filters: %{
         allow: config.allow,
         deny: config.deny
@@ -101,106 +118,70 @@ defmodule LLMModels.Engine do
       prefer: config.prefer
     }
 
-    {:ok, sources}
+    {:ok, layers_data}
   end
 
-  # Stage 2: Normalize
-  defp normalize(sources) do
-    normalized = %{
-      packaged: %{
-        providers: Normalize.normalize_providers(sources.packaged.providers),
-        models: Normalize.normalize_models(sources.packaged.models),
-        excludes: sources.packaged.excludes
-      },
-      config: %{
-        providers: Normalize.normalize_providers(sources.config.providers),
-        models: Normalize.normalize_models(sources.config.models),
-        excludes: sources.config.excludes
-      },
-      behaviour: %{
-        providers: Normalize.normalize_providers(sources.behaviour.providers),
-        models: Normalize.normalize_models(sources.behaviour.models),
-        excludes: sources.behaviour.excludes
-      },
-      filters: sources.filters,
-      prefer: sources.prefer
-    }
+  # Stage 2: Normalize - apply to each layer
+  defp normalize_layers(layers_data) do
+    normalized_layers =
+      Enum.map(layers_data.layers, fn layer ->
+        %{
+          name: layer.name,
+          providers: Normalize.normalize_providers(layer.providers),
+          models: Normalize.normalize_models(layer.models)
+        }
+      end)
 
-    {:ok, normalized}
+    {:ok,
+     %{
+       layers: normalized_layers,
+       filters: layers_data.filters,
+       prefer: layers_data.prefer
+     }}
   end
 
-  # Stage 3: Validate
-  defp validate(normalized) do
-    {:ok, packaged_providers, packaged_providers_dropped} =
-      Validate.validate_providers(normalized.packaged.providers)
+  # Stage 3: Validate - apply to each layer and log results
+  defp validate_layers(normalized) do
+    validated_layers =
+      Enum.map(normalized.layers, fn layer ->
+        {:ok, providers, providers_dropped} = Validate.validate_providers(layer.providers)
+        {:ok, models, models_dropped} = Validate.validate_models(layer.models)
 
-    {:ok, packaged_models, packaged_models_dropped} =
-      Validate.validate_models(normalized.packaged.models)
+        if providers_dropped > 0 do
+          Logger.warning(
+            "Dropped #{providers_dropped} invalid provider(s) from #{inspect(layer.name)}"
+          )
+        end
 
-    {:ok, config_providers, config_providers_dropped} =
-      Validate.validate_providers(normalized.config.providers)
+        if models_dropped > 0 do
+          Logger.warning("Dropped #{models_dropped} invalid model(s) from #{inspect(layer.name)}")
+        end
 
-    {:ok, config_models, config_models_dropped} =
-      Validate.validate_models(normalized.config.models)
+        %{
+          name: layer.name,
+          providers: providers,
+          models: models
+        }
+      end)
 
-    {:ok, behaviour_providers, behaviour_providers_dropped} =
-      Validate.validate_providers(normalized.behaviour.providers)
-
-    {:ok, behaviour_models, behaviour_models_dropped} =
-      Validate.validate_models(normalized.behaviour.models)
-
-    log_validation_results(
-      packaged_providers_dropped,
-      packaged_models_dropped,
-      config_providers_dropped,
-      config_models_dropped,
-      behaviour_providers_dropped,
-      behaviour_models_dropped
-    )
-
-    validated = %{
-      packaged: %{
-        providers: packaged_providers,
-        models: packaged_models,
-        excludes: normalized.packaged.excludes
-      },
-      config: %{
-        providers: config_providers,
-        models: config_models,
-        excludes: normalized.config.excludes
-      },
-      behaviour: %{
-        providers: behaviour_providers,
-        models: behaviour_models,
-        excludes: normalized.behaviour.excludes
-      },
-      filters: normalized.filters,
-      prefer: normalized.prefer
-    }
-
-    {:ok, validated}
+    {:ok,
+     %{
+       layers: validated_layers,
+       filters: normalized.filters,
+       prefer: normalized.prefer
+     }}
   end
 
-  # Stage 4: Merge
-  defp merge(validated) do
-    all_excludes =
-      Map.merge(
-        validated.packaged.excludes,
-        Map.merge(validated.config.excludes, validated.behaviour.excludes, fn _k, _v1, v2 ->
-          v2
-        end),
-        fn _k, _v1, v2 -> v2 end
-      )
-
-    providers =
-      validated.packaged.providers
-      |> Merge.merge_providers(validated.config.providers)
-      |> Merge.merge_providers(validated.behaviour.providers)
-
-    models =
-      validated.packaged.models
-      |> Merge.merge_models(validated.config.models, all_excludes)
-      |> Merge.merge_models(validated.behaviour.models, all_excludes)
+  # Stage 4: Merge - combine all layers with precedence (last wins)
+  defp merge_layers(validated) do
+    # Reduce layers left-to-right (first = lowest precedence, last = highest)
+    {providers, models} =
+      Enum.reduce(validated.layers, {[], []}, fn layer, {acc_providers, acc_models} ->
+        {
+          Merge.merge_providers(acc_providers, layer.providers),
+          merge_models_with_list_rules(acc_models, layer.models)
+        }
+      end)
 
     merged = %{
       providers: providers,
@@ -370,6 +351,42 @@ defmodule LLMModels.Engine do
 
   # Private helpers
 
+  # Merge models with special list handling rules
+  # Union for known list fields (aliases), replace for others
+  defp merge_models_with_list_rules(base_models, override_models) do
+    base_map = Map.new(base_models, fn m -> {{Map.get(m, :provider), Map.get(m, :id)}, m} end)
+
+    override_map =
+      Map.new(override_models, fn m -> {{Map.get(m, :provider), Map.get(m, :id)}, m} end)
+
+    Map.merge(base_map, override_map, fn _identity, base_model, override_model ->
+      deep_merge_with_list_rules(base_model, override_model)
+    end)
+    |> Map.values()
+  end
+
+  # Deep merge with special list handling
+  defp deep_merge_with_list_rules(left, right) when is_map(left) and is_map(right) do
+    Map.merge(left, right, fn key, left_val, right_val ->
+      cond do
+        is_map(left_val) and is_map(right_val) ->
+          deep_merge_with_list_rules(left_val, right_val)
+
+        is_list(left_val) and is_list(right_val) ->
+          # Union-dedupe for aliases, replace for others
+          if key in [:aliases] do
+            (right_val ++ left_val) |> Enum.uniq()
+          else
+            right_val
+          end
+
+        true ->
+          # Scalar: last wins (right has higher precedence)
+          right_val
+      end
+    end)
+  end
+
   defp matches_patterns?(_model_id, []), do: false
 
   defp matches_patterns?(model_id, patterns) when is_binary(model_id) do
@@ -379,40 +396,12 @@ defmodule LLMModels.Engine do
     end)
   end
 
-  defp log_validation_results(
-         packaged_providers_dropped,
-         packaged_models_dropped,
-         config_providers_dropped,
-         config_models_dropped,
-         behaviour_providers_dropped,
-         behaviour_models_dropped
-       ) do
-    if packaged_providers_dropped > 0 do
-      Logger.warning(
-        "Dropped #{packaged_providers_dropped} invalid provider(s) from packaged source"
-      )
-    end
+  defp flatten_nested_data(data) when is_map(data) do
+    Enum.reduce(data, {[], []}, fn {_provider_id, provider_data}, {provs_acc, mods_acc} ->
+      models = Map.get(provider_data, :models, Map.get(provider_data, "models", []))
+      provider = Map.delete(Map.delete(provider_data, :models), "models")
 
-    if packaged_models_dropped > 0 do
-      Logger.warning("Dropped #{packaged_models_dropped} invalid model(s) from packaged source")
-    end
-
-    if config_providers_dropped > 0 do
-      Logger.warning("Dropped #{config_providers_dropped} invalid provider(s) from config source")
-    end
-
-    if config_models_dropped > 0 do
-      Logger.warning("Dropped #{config_models_dropped} invalid model(s) from config source")
-    end
-
-    if behaviour_providers_dropped > 0 do
-      Logger.warning(
-        "Dropped #{behaviour_providers_dropped} invalid provider(s) from behaviour source"
-      )
-    end
-
-    if behaviour_models_dropped > 0 do
-      Logger.warning("Dropped #{behaviour_models_dropped} invalid model(s) from behaviour source")
-    end
+      {[provider | provs_acc], models ++ mods_acc}
+    end)
   end
 end
