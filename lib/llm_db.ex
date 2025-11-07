@@ -5,6 +5,16 @@ defmodule LLMDb do
   Provides a simple, capability-aware API for querying LLM model metadata.
   All queries are backed by `:persistent_term` for O(1), lock-free access.
 
+  ## Model Specs
+
+  Model specifications can be expressed in multiple formats:
+  - `"provider:model"` (e.g., `"openai:gpt-4o-mini"`) - Traditional colon format
+  - `"model@provider"` (e.g., `"gpt-4o-mini@openai"`) - Filesystem-safe @ format
+  - `{:provider, "model"}` (e.g., `{:openai, "gpt-4o-mini"}`) - Tuple format
+
+  See the [Model Spec Formats](guides/model-spec-formats.md) guide for detailed information
+  on when to use each format.
+
   ## Two Phases
 
   **Phase 1 - Build Time** (Mix tasks):
@@ -37,7 +47,10 @@ defmodule LLMDb do
 
   ## Utilities
 
-  - `parse/1` - Parse a model spec string into {provider, model_id} tuple
+  - `parse/1,2` - Parse a model spec string (colon or @ format) into {provider, model_id} tuple
+  - `parse!/1,2` - Parse a model spec string, raising on error
+  - `format/1,2` - Format a {provider, model_id} tuple as a string
+  - `build/1,2` - Build a spec string from various inputs, converting between formats
 
   ## Examples
 
@@ -228,11 +241,13 @@ defmodule LLMDb do
   defdelegate models(provider), to: Store
 
   @doc """
-  Parses "provider:model" spec string and returns the model.
+  Parses model spec string and returns the model.
+
+  Supports both "provider:model" and "model@provider" formats.
 
   ## Parameters
 
-  - `spec` - Model spec string like `"openai:gpt-4o-mini"`
+  - `spec` - Model spec string like `"openai:gpt-4o-mini"` or `"gpt-4o-mini@openai"`
 
   ## Returns
 
@@ -242,6 +257,7 @@ defmodule LLMDb do
   ## Examples
 
       {:ok, model} = LLMDb.model("openai:gpt-4o-mini")
+      {:ok, model} = LLMDb.model("gpt-4o-mini@openai")
       {:ok, model} = LLMDb.model("anthropic:claude-3-5-sonnet-20241022")
   """
   @spec model(String.t()) :: {:ok, Model.t()} | {:error, term()}
@@ -390,11 +406,13 @@ defmodule LLMDb do
   @doc """
   Parses a model spec string into a {provider, model_id} tuple.
 
-  Accepts either "provider:model" format or a {provider, model_id} tuple.
+  Supports both "provider:model" (default) and "model@provider" (filename-safe) formats.
+  Automatically detects the format based on separator present.
 
   ## Parameters
 
-  - `spec` - Either a string like `"openai:gpt-4o-mini"` or tuple like `{:openai, "gpt-4o-mini"}`
+  - `spec` - String like `"openai:gpt-4o-mini"`, `"gpt-4o-mini@openai"`, or tuple `{:openai, "gpt-4o-mini"}`
+  - `opts` - Keyword list with optional `:format` to explicitly specify `:colon` or `:at`
 
   ## Returns
 
@@ -404,12 +422,76 @@ defmodule LLMDb do
   ## Examples
 
       {:ok, {:openai, "gpt-4o-mini"}} = LLMDb.parse("openai:gpt-4o-mini")
+      {:ok, {:openai, "gpt-4o-mini"}} = LLMDb.parse("gpt-4o-mini@openai")
       {:ok, {:anthropic, "claude-3-5-sonnet-20241022"}} = LLMDb.parse("anthropic:claude-3-5-sonnet-20241022")
       {:ok, {:openai, "gpt-4o"}} = LLMDb.parse({:openai, "gpt-4o"})
+
+      # With explicit format when ambiguous
+      {:ok, {:openai, "model@test"}} = LLMDb.parse("openai:model@test", format: :colon)
   """
-  @spec parse(String.t() | {provider(), model_id()}) ::
+  @spec parse(String.t() | {provider(), model_id()}, keyword()) ::
           {:ok, {provider(), model_id()}} | {:error, term()}
-  def parse(spec), do: Spec.parse_spec(spec)
+  def parse(spec, opts \\ []), do: Spec.parse_spec(spec, opts)
+
+  @doc """
+  Parses a model spec string, raising on error.
+
+  Same as `parse/2` but raises `ArgumentError` instead of returning error tuple.
+
+  ## Examples
+
+      {:openai, "gpt-4o-mini"} = LLMDb.parse!("openai:gpt-4o-mini")
+      {:openai, "gpt-4o-mini"} = LLMDb.parse!("gpt-4o-mini@openai")
+  """
+  @spec parse!(String.t() | {provider(), model_id()}, keyword()) :: {provider(), model_id()}
+  def parse!(spec, opts \\ []), do: Spec.parse_spec!(spec, opts)
+
+  @doc """
+  Formats a model spec tuple as a string.
+
+  Converts a {provider, model_id} tuple to string format. The output format can be
+  controlled via the `format` parameter or falls back to the application config
+  `:llm_db, :model_spec_format` (default: `:provider_colon_model`).
+
+  ## Parameters
+
+  - `spec` - {provider, model_id} tuple
+  - `format` - Optional format override (atom)
+
+  ## Supported Formats
+
+  - `:provider_colon_model` - "provider:model" (default)
+  - `:model_at_provider` - "model@provider" (filename-safe)
+  - `:filename_safe` - alias for `:model_at_provider`
+
+  ## Examples
+
+      "openai:gpt-4o-mini" = LLMDb.format({:openai, "gpt-4o-mini"})
+      "gpt-4o-mini@openai" = LLMDb.format({:openai, "gpt-4o-mini"}, :filename_safe)
+      "gpt-4o-mini@openai" = LLMDb.format({:openai, "gpt-4o-mini"}, :model_at_provider)
+  """
+  @spec format({provider(), model_id()}, atom() | nil) :: String.t()
+  def format(spec, format \\ nil), do: Spec.format_spec(spec, format)
+
+  @doc """
+  Builds a model specification string from various inputs.
+
+  Accepts strings (in any supported format) or tuples and outputs a string
+  in the desired format. Useful for converting between formats.
+
+  ## Parameters
+
+  - `input` - Model spec as string or tuple
+  - `opts` - Keyword list with optional `:format` for output format
+
+  ## Examples
+
+      "gpt-4@openai" = LLMDb.build("openai:gpt-4", format: :filename_safe)
+      "openai:gpt-4" = LLMDb.build("gpt-4@openai", format: :provider_colon_model)
+      "gpt-4@openai" = LLMDb.build({:openai, "gpt-4"}, format: :model_at_provider)
+  """
+  @spec build(String.t() | {provider(), model_id()}, keyword()) :: String.t()
+  def build(input, opts \\ []), do: Spec.build_spec(input, opts)
 
   # Internal (Store access)
 

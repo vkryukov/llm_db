@@ -1,7 +1,7 @@
 defmodule LLMDb.MixProject do
   use Mix.Project
 
-  @version "2025.11.7"
+  @version "2025.11.7-preview"
   @source_url "https://github.com/agentjido/llm_db"
   @description "LLM model metadata catalog with fast, capability-aware lookups."
 
@@ -31,6 +31,7 @@ defmodule LLMDb.MixProject do
         main: "readme",
         extras: [
           "README.md",
+          "guides/model-spec-formats.md",
           "guides/schema-system.md",
           "guides/sources-and-engine.md",
           "guides/runtime-filters.md",

@@ -3,9 +3,9 @@
 [![Hex.pm](https://img.shields.io/hexpm/v/llm_db.svg)](https://hex.pm/packages/llm_db)
 [![License](https://img.shields.io/hexpm/l/llm_db.svg)](https://github.com/agentjido/llm_db/blob/main/LICENSE)
 
-LLM model metadata catalog with fast, capability-aware lookups. Use simple `"provider:model"` specs, get validated Provider/Model structs, and select models by capabilities. Ships with a packaged snapshot; no network required by default.
+LLM model metadata catalog with fast, capability-aware lookups. Use simple `"provider:model"` or `"model@provider"` specs, get validated Provider/Model structs, and select models by capabilities. Ships with a packaged snapshot; no network required by default.
 
-- **Primary interface**: `model_spec` — a string like `"openai:gpt-4o-mini"`
+- **Primary interface**: `model_spec` — a string like `"openai:gpt-4o-mini"` or `"gpt-4o-mini@openai"` (filename-safe)
 - **Fast O(1) reads** via `:persistent_term`
 - **Minimal dependencies** 
 
@@ -23,12 +23,19 @@ end
 
 ## model_spec (the main interface)
 
-A `model_spec` is `"provider:model"` (e.g., `"openai:gpt-4o-mini"`).
+A `model_spec` is a string in one of two formats:
+- `"provider:model"` (e.g., `"openai:gpt-4o-mini"`) — traditional colon format
+- `"model@provider"` (e.g., `"gpt-4o-mini@openai"`) — filename-safe format
 
-Use it to fetch model structs or resolve identifiers. Tuples `{:provider_atom, "id"}` also work, but prefer the string spec.
+Both formats are automatically recognized and work interchangeably. Use the `@` format when model specs appear in filenames, CI artifact names, or other filesystem contexts where colons are problematic.
+
+Tuples `{:provider_atom, "id"}` also work, but prefer the string spec.
 
 ```elixir
 {:ok, model} = LLMDb.model("openai:gpt-4o-mini")
+#=> %LLMDb.Model{id: "gpt-4o-mini", provider: :openai, ...}
+
+{:ok, model} = LLMDb.model("gpt-4o-mini@openai")
 #=> %LLMDb.Model{id: "gpt-4o-mini", provider: :openai, ...}
 ```
 
@@ -58,7 +65,7 @@ LLMDb.allowed?("openai:gpt-4o-mini") #=> true
 
 ## API Cheatsheet
 
-- **`model/1`** — `"provider:model"` or `{:provider, id}` → `{:ok, %Model{}}` | `{:error, _}`
+- **`model/1`** — `"provider:model"`, `"model@provider"`, or `{:provider, id}` → `{:ok, %Model{}}` | `{:error, _}`
 - **`model/2`** — `provider` atom + `id` → `{:ok, %Model{}}` | `{:error, _}`
 - **`models/0`** — list all models → `[%Model{}]`
 - **`models/1`** — list provider's models → `[%Model{}]`
@@ -68,7 +75,10 @@ LLMDb.allowed?("openai:gpt-4o-mini") #=> true
 - **`candidates/1`** — get all matches by capabilities → `[{provider, id}]`
 - **`capabilities/1`** — get capabilities map → `map()` | `nil`
 - **`allowed?/1`** — check availability → `boolean()`
-- **`parse/1`** — parse spec string → `{:ok, {provider, id}}` | `{:error, _}`
+- **`parse/1,2`** — parse spec string (both formats) → `{:ok, {provider, id}}` | `{:error, _}`
+- **`parse!/1,2`** — parse spec string, raising on error → `{provider, id}`
+- **`format/1,2`** — format `{provider, id}` as string → `"provider:model"` or `"model@provider"`
+- **`build/1,2`** — build spec string from input, converting between formats → `String.t()`
 - **`load/1`**, **`load/0`** — load or reload snapshot with optional runtime overrides
 - **`load_empty/1`** — load empty catalog (fallback when no snapshot available)
 - **`epoch/0`**, **`snapshot/0`** — diagnostics
