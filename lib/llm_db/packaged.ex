@@ -50,7 +50,6 @@ defmodule LLMDB.Packaged do
                  else
                    nil
                  end)
-  _ = @snapshot_sha
 
   @doc """
   Returns the absolute path to the packaged snapshot file.

@@ -127,14 +127,8 @@ defmodule LLMDB.Loader do
   end
 
   # Private helpers
-
-  @spec packaged_snapshot_dynamic() :: dynamic()
-  defp packaged_snapshot_dynamic do
-    apply(LLMDB.Packaged, :snapshot, [])
-  end
-
   defp load_packaged do
-    case packaged_snapshot_dynamic() do
+    case apply(LLMDB.Packaged, :snapshot, []) do
       nil ->
         {:error, :no_snapshot}
 
