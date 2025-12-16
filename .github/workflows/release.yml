@@ -37,6 +37,9 @@ jobs:
       - name: Disable git hooks
         run: git config core.hooksPath /dev/null
 
+      - name: Fetch tags
+        run: git fetch --tags --force
+
       - name: Set up Elixir
         uses: erlef/setup-beam@v1
         with:
