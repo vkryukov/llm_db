@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 <!-- changelog -->
 
+## [2025.12.0](https://github.com/agentjido/llm_db/compare/v2025.12.0...2025.12.0) (2025-12-17)
+
+
+
+
+### Features:
+
+* add hex_dry_run option and version bump commit to release workflow by mikehostetler
+
+* sort JSON keys for deterministic output (#51) by mikehostetler
+
+* sort JSON keys for deterministic output by mikehostetler
+
+* add git_hooks integration for code quality enforcement (#42) by mikehostetler
+
+### Bug Fixes:
+
+* add fetch-tags option and debug output to release workflow by mikehostetler
+
+* fetch tags explicitly in release workflow by mikehostetler
+
+* update model metadata for 69 provider(s) (#50) by github-actions[bot]
+
+* disable git hooks in CI workflow by mikehostetler
+
+* use commit-message instead of invalid commit-message-path by mikehostetler
+
+* restrict llm_db.build and llm_db.pull tasks to llm_db project only (#49) by mikehostetler
+
 ## [Unreleased]
 
 ### Changed
