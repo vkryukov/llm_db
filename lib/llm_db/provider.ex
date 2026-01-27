@@ -14,6 +14,43 @@ defmodule LLMDB.Provider do
                          doc: Zoi.string() |> Zoi.nullish()
                        })
 
+  @pricing_component_schema Zoi.object(%{
+                              id: Zoi.string(),
+                              kind:
+                                Zoi.enum([
+                                  "token",
+                                  "tool",
+                                  "image",
+                                  "storage",
+                                  "request",
+                                  "other"
+                                ])
+                                |> Zoi.nullish(),
+                              unit:
+                                Zoi.enum([
+                                  "token",
+                                  "call",
+                                  "query",
+                                  "session",
+                                  "gb_day",
+                                  "image",
+                                  "source",
+                                  "other"
+                                ])
+                                |> Zoi.nullish(),
+                              per: Zoi.integer() |> Zoi.min(1) |> Zoi.nullish(),
+                              rate: Zoi.number() |> Zoi.nullish(),
+                              meter: Zoi.string() |> Zoi.nullish(),
+                              tool: Zoi.union([Zoi.atom(), Zoi.string()]) |> Zoi.nullish(),
+                              size_class: Zoi.string() |> Zoi.nullish(),
+                              notes: Zoi.string() |> Zoi.nullish()
+                            })
+
+  @pricing_defaults_schema Zoi.object(%{
+                             currency: Zoi.string() |> Zoi.nullish(),
+                             components: Zoi.array(@pricing_component_schema) |> Zoi.default([])
+                           })
+
   @schema Zoi.struct(
             __MODULE__,
             %{
@@ -24,6 +61,7 @@ defmodule LLMDB.Provider do
               config_schema: Zoi.array(@config_field_schema) |> Zoi.nullish(),
               doc: Zoi.string() |> Zoi.nullish(),
               exclude_models: Zoi.array(Zoi.string()) |> Zoi.default([]) |> Zoi.nullish(),
+              pricing_defaults: @pricing_defaults_schema |> Zoi.nullish(),
               extra: Zoi.map() |> Zoi.nullish(),
               alias_of: Zoi.atom() |> Zoi.nullish()
             },

@@ -18,6 +18,17 @@ image = 1238.0
 reasoning = 0.0
 request = 0.0
 
+[pricing]
+currency = "USD"
+merge = "merge_by_id"
+
+[[pricing.components]]
+id = "image.generated"
+kind = "image"
+unit = "image"
+per = 1
+rate = 0.039
+
 [modalities]
 input = ["text", "image"]
 output = ["text", "image"]
