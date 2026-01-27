@@ -22,4 +22,14 @@ defmodule LLMDB.MergeTest do
     assert Enum.map(result, &Map.get(&1, "id")) == ["a", "b"]
     assert Enum.find(result, &(Map.get(&1, "id") == "a"))["rate"] == 2
   end
+
+  test "merge_list_by_id matches atom ids with string id_key" do
+    base = [%{id: "a", rate: 1}]
+    override = [%{id: "a", rate: 2}, %{id: "b", rate: 3}]
+
+    result = Merge.merge_list_by_id(base, override, "id")
+
+    assert Enum.map(result, & &1.id) == ["a", "b"]
+    assert Enum.find(result, &(&1.id == "a")).rate == 2
+  end
 end

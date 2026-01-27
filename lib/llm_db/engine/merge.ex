@@ -196,8 +196,27 @@ defmodule LLMDB.Merge do
     merged ++ extras
   end
 
-  defp list_item_id(item, id_key) when is_map(item) do
-    Map.get(item, id_key) || Map.get(item, to_string(id_key))
+  defp list_item_id(item, id_key) when is_map(item) and is_atom(id_key) do
+    Map.get(item, id_key) || Map.get(item, Atom.to_string(id_key))
+  end
+
+  defp list_item_id(item, id_key) when is_map(item) and is_binary(id_key) do
+    Map.get(item, id_key) || map_get_existing_atom(item, id_key)
+  end
+
+  defp map_get_existing_atom(item, key) do
+    case to_existing_atom(key) do
+      {:ok, atom} -> Map.get(item, atom)
+      :error -> nil
+    end
+  end
+
+  defp to_existing_atom(key) do
+    try do
+      {:ok, String.to_existing_atom(key)}
+    rescue
+      ArgumentError -> :error
+    end
   end
 
   @doc """
